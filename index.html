@@ -2984,7 +2984,7 @@ var qrcode = function() {
     return qrcode;
 }));
 </script>
-    <script type="module">const FileManager = (() => {
+    <script type="module">const FileManager=(()=>{
 function makeId() {
   return (
     globalThis.crypto?.randomUUID?.() ??
@@ -3106,9 +3106,8 @@ class FileManager {
   }
 }
 
-return FileManager;
-})();
-const HistoryManager = (() => {
+return FileManager;})();
+const HistoryManager=(()=>{
 class HistoryManager {
   constructor(onChange = () => {}) {
     this.undoStack = [];
@@ -3162,9 +3161,8 @@ class HistoryManager {
   }
 }
 
-return HistoryManager;
-})();
-const PageManager = (() => {
+return HistoryManager;})();
+const PageManager=(()=>{
 function makeId() {
   return (
     globalThis.crypto?.randomUUID?.() ??
@@ -3365,9 +3363,8 @@ class PageManager {
   }
 }
 
-return PageManager;
-})();
-const PreviewManager = (() => {
+return PageManager;})();
+const PreviewManager=(()=>{
 class PreviewManager {
   constructor({ modal, canvas, title }) {
     this.modal = modal;
@@ -3435,9 +3432,8 @@ class PreviewManager {
   }
 }
 
-return PreviewManager;
-})();
-const ExportManager = (() => {
+return PreviewManager;})();
+const ExportManager=(()=>{
 class ExportManager {
   constructor(app) {
     this.app = app;
@@ -4123,6 +4119,25 @@ class ExportManager {
     return {blob,name:base+".pptx",size:blob.size};
   }
 
+  alignTextLines(left, right) {
+    const n=left.length,m=right.length;
+    if((n+1)*(m+1)>4000000)throw new Error("المقارنة كبيرة جدًا. حدد صفحات أقل من كل ملف ثم أعد المحاولة.");
+    const stride=m+1,table=new Uint32Array((n+1)*stride);
+    const normalize=line=>String(line).replace(/\s+/g,' ').trim();
+    const a=left.map(normalize),b=right.map(normalize);
+    for(let i=n-1;i>=0;i--) {
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      for(let j=m-1;j>=0;j--)table[i*stride+j]=a[i]===b[j]?table[(i+1)*stride+j+1]+1:Math.max(table[(i+1)*stride+j],table[i*stride+j+1]);
+    }
+    const result=[];let i=0,j=0;
+    while(i<n||j<m){
+      if(i<n&&j<m&&a[i]===b[j]){result.push({left:left[i++],right:right[j++],type:'same'});}
+      else if(j<m&&(i===n||table[i*stride+j+1]>table[(i+1)*stride+j]))result.push({left:'',right:right[j++],type:'added'});
+      else result.push({left:left[i++],right:'',type:'removed'});
+    }
+    return result;
+  }
+
   async exportDocumentTool(operation, pages, base) {
     const selected = pages.filter(p => p.selected && !p.deleted);
     if (!selected.length) throw new Error("حدد صفحات أولًا.");
@@ -4159,7 +4174,7 @@ class ExportManager {
       const clean=s=>this.escapeHtml(String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,''));
       const records=[['الملف','الصفحة','النص']];sections.forEach(section=>section.text.split('\n').forEach(line=>{if(line.trim())records.push([section.name,String(section.page),line]);}));
       if(records.length>1048576)throw new Error("عدد الأسطر يتجاوز الحد المسموح في Excel.");
-      const rows=records.map((row,i)=>'<row r="'+(i+1)+'">'+row.map((value,j)=>'<c r="'+String.fromCharCode(65+j)+(i+1)+'" t="inlineStr"><is><t xml:space="preserve">'+clean(value).slice(0,32767)+'</t></is></c>').join('')+'</row>').join('');
+      const rows=records.map((row,i)=>'<row r="'+(i+1)+'">'+row.map((value,j)=>'<c r="'+String.fromCharCode(65+j)+(i+1)+'" t="inlineStr"><is><t xml:space="preserve">'+clean(String(value).slice(0,32767))+'</t></is></c>').join('')+'</row>').join('');
       const zip=new JSZip();
       zip.file('[Content_Types].xml','<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
       zip.file('_rels/.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
@@ -4180,8 +4195,8 @@ class ExportManager {
     const groups=new Map();sections.forEach(s=>{if(!groups.has(s.fileId))groups.set(s.fileId,{name:s.name,text:[]});groups.get(s.fileId).text.push(s.text);});
     if(groups.size!==2) throw new Error("أضف ملفين بالضبط وحدد صفحات من كل ملف للمقارنة.");
     const [left,right]=[...groups.values()];const a=left.text.join('\n').split('\n'),b=right.text.join('\n').split('\n');
-    const rows=Array.from({length:Math.max(a.length,b.length)},(_,i)=>{const same=(a[i]||'').trim()===(b[i]||'').trim();return '<tr style="background:'+(same?'white':'#fff4ce')+'"><td>'+this.escapeHtml(a[i]||'')+'</td><td>'+this.escapeHtml(b[i]||'')+'</td><td>'+(same?'متطابق':'مختلف')+'</td></tr>';}).join('');
-    const html='<!doctype html><meta charset="utf-8"><title>مقارنة نصوص</title><body dir="rtl"><h1>مقارنة نصية حسب ترتيب الأسطر</h1><p>الأصفر يوضح اختلاف الأسطر. إدراج سطر قد يغيّر محاذاة الأسطر التالية. لا تشمل المقارنة الرسومات أو التنسيق.</p><table border="1" cellpadding="10" style="border-collapse:collapse;white-space:pre-wrap"><tr><th>'+this.escapeHtml(left.name)+'</th><th>'+this.escapeHtml(right.name)+'</th><th>الحالة</th></tr>'+rows+'</table></body>';
+    const rows=this.alignTextLines(a,b).map(row=>{const same=row.type==='same';return '<tr style="background:'+(same?'white':'#fff4ce')+'"><td>'+this.escapeHtml(row.left)+'</td><td>'+this.escapeHtml(row.right)+'</td><td>'+({same:'متطابق',added:'مضاف',removed:'محذوف'})[row.type]+'</td></tr>';}).join('');
+    const html='<!doctype html><meta charset="utf-8"><title>مقارنة نصوص</title><body dir="rtl"><h1>مقارنة نصية مع محاذاة الأسطر</h1><p>الأصفر يوضح الأسطر المضافة أو المحذوفة. تُحاذى الأسطر المشتركة حتى لا تسبب إضافة سطر اختلاف بقية التقرير. لا تشمل المقارنة الرسومات أو التنسيق.</p><table border="1" cellpadding="10" style="border-collapse:collapse;white-space:pre-wrap"><tr><th>'+this.escapeHtml(left.name)+'</th><th>'+this.escapeHtml(right.name)+'</th><th>الحالة</th></tr>'+rows+'</table></body>';
     const blob=new Blob([html],{type:'text/html;charset=utf-8'});return {blob,name:base+'-comparison.html',size:blob.size};
   }
 
@@ -4293,6 +4308,489 @@ class ExportManager {
     const blob=await zip.generateAsync({type:'blob'});return {blob,name:base+'-publish.zip',size:blob.size};
   }
 
+  async redactPages(pages, base) {
+    const get=id=>Number(this.getElement(id).value);
+    const x=get('#redactX'),y=get('#redactY'),w=get('#redactW'),h=get('#redactH');
+    if(![x,y,w,h].every(Number.isFinite)||x<0||y<0||w<=0||h<=0||x+w>100||y+h>100)throw new Error("حدود الحجب خارج الصفحة. يجب أن يكون الموضع مع الحجم ضمن ١٠٠٪.");
+    if(!pages.length||!pages.some(p=>p.selected))throw new Error("حدد الصفحات المراد حجب المنطقة فيها.");
+    const output=await PDFLib.PDFDocument.create();
+    for(let i=0;i<pages.length;i++) {
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const record=pages[i],canvas=await this.renderPage(record,1.5);
+      try {
+        if(record.selected){const context=canvas.getContext('2d');context.fillStyle='#000000';const left=Math.floor(canvas.width*x/100),top=Math.floor(canvas.height*y/100),right=Math.ceil(canvas.width*(x+w)/100),bottom=Math.ceil(canvas.height*(y+h)/100);context.fillRect(left,top,right-left,bottom-top);}
+        const blob=await this.canvasToBlob(canvas,'image/png');const image=await output.embedPng(await blob.arrayBuffer());
+        const page=output.addPage([canvas.width/1.5,canvas.height/1.5]);const size=page.getSize();page.drawImage(image,{x:0,y:0,width:size.width,height:size.height});
+      } finally {canvas.width=0;canvas.height=0;}
+      this.app.progress((i+1)/pages.length*90,'إعادة بناء الصفحات بعد الحجب','صفحة '+(i+1));
+    }
+    const bytes=await output.save();const blob=new Blob([bytes],{type:'application/pdf'});return {blob,name:base+'-redacted.pdf',size:blob.size};
+  }
+
+  async exportBatch(pages, base, ranges) {
+    if(!pages.length)throw new Error("أضف ملفات أولًا.");
+    const operations=[['#batchPdf','merge'],['#batchText','text'],['#batchImages','images']].filter(([id])=>this.getElement(id).checked).map(([,op])=>op);
+    if(!operations.length)throw new Error("اختر مخرجًا واحدًا على الأقل.");
+    const zip=new JSZip();
+    for(let i=0;i<operations.length;i++) {
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const result=await this.export(operations[i],pages,ranges);
+      zip.file(result.name,await result.blob.arrayBuffer());
+      this.app.progress((i+1)/operations.length*90,'تجهيز حزمة المخرجات','مخرج '+(i+1)+' من '+operations.length);
+    }
+    zip.file('اقرأني.txt','هذه مخرجات مستقلة من الصفحات الحالية. ملف PDF يستخدم جميع الصفحات غير المحذوفة، والنص والصور يستخدمان الصفحات المحددة. ليست سلسلة تحويلات متتابعة.\n');
+    const blob=await zip.generateAsync({type:'blob'});return {blob,name:base+'-outputs.zip',size:blob.size};
+  }
+
+  async addTextToPdf(pages, base) {
+    const text=this.getElement('#editTextValue').value.trim();
+    if(!text||text.length>400)throw new Error("أدخل نصًا من ١ إلى ٤٠٠ حرف.");
+    if(!pages.some(page=>page.selected))throw new Error("حدد الصفحات لإضافة النص.");
+    if(document.fonts?.ready)await document.fonts.ready;
+    const canvas=document.createElement('canvas');canvas.width=1600;canvas.height=300;
+    const ctx=canvas.getContext('2d');ctx.font='36px "IBM Plex Sans Arabic", Tahoma, Arial';ctx.fillStyle='#181916';ctx.textAlign='right';ctx.direction='rtl';
+    const words=text.split(/\s+/);let line='',lines=[];
+    for(const word of words){const candidate=line?line+' '+word:word;if(ctx.measureText(candidate).width>1500&&line){lines.push(line);line=word;}else line=candidate;}if(line)lines.push(line);
+    if(lines.length>5||lines.some(value=>ctx.measureText(value).width>1500))throw new Error("النص أطول من مساحة الإضافة؛ اختصره.");
+    lines.forEach((value,index)=>ctx.fillText(value,1550,50+index*48));
+    const output=await PDFLib.PDFDocument.create();const blob=await this.canvasToBlob(canvas,'image/png');canvas.width=0;canvas.height=0;const image=await output.embedPng(await blob.arrayBuffer());
+    for(let i=0;i<pages.length;i++){
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");const record=pages[i];let page;
+      if(record.blank)page=output.addPage([595,842]);else{const source=await this.getSource(record.file);[page]=await output.copyPages(source,[record.number-1]);page.setRotation(PDFLib.degrees((page.getRotation().angle+(record.rotation||0))%360));output.addPage(page);}
+      if(record.selected){if(page.getRotation().angle%360!==0)throw new Error("صدّر الصفحات المدوّرة وأعد فتحها قبل إضافة النص.");const box=page.getCropBox(),width=box.width*.9,height=width*300/1600,margin=box.width*.05;const y=this.getElement('#editTextPosition').value==='bottom'?box.y+margin:box.y+box.height-height-margin;page.drawImage(image,{x:box.x+margin,y,width,height});}
+      this.app.progress((i+1)/pages.length*90,'إضافة النص','صفحة '+(i+1));
+    }
+    const bytes=await output.save(),result=new Blob([bytes],{type:'application/pdf'});return {blob:result,name:base+'.pdf',size:result.size};
+  }
+
+  async summarizePdfText(pages, base) {
+    const limit=Number(this.getElement('#summarySentences').value);
+    if(!Number.isInteger(limit)||limit<1||limit>30)throw new Error("اختر عدد جمل بين ١ و٣٠.");
+    const selected=pages.filter(page=>page.selected&&!page.deleted);if(!selected.length)throw new Error("حدد صفحات أولًا.");
+    const source=[];
+    for(let i=0;i<selected.length;i++){
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");const page=selected[i];if(page.blank)continue;
+      const pdfPage=await page.pdf.getPage(page.number),content=await pdfPage.getTextContent();
+      const text=content.items.map(item=>(item.str||'')+(item.hasEOL?'\n':' ')).join('');source.push({name:page.fileName,page:page.number,text});
+      this.app.progress((i+1)/selected.length*75,'قراءة النص','صفحة '+(i+1));
+    }
+    const stop=new Set('في من على الى إلى عن أن إن ان او أو و لا ما هو هي هذا هذه ذلك التي الذي مع ثم كان كانت كل قد لم لن بين بعد قبل for the and of to is in a an on at by with as it be are was were this that from or not'.split(' '));
+    const tokenize=text=>(text.normalize('NFKC').toLowerCase().replace(/[\u064B-\u065F\u0670]/g,'').match(/[\p{L}\p{N}]+/gu)||[]).filter(word=>word.length>2&&!stop.has(word));
+    const sentences=[];source.forEach(section=>section.text.split(/(?<=[.!?؟؛])\s+|\n+/u).forEach(text=>{text=text.trim();if(text.length>=15)sentences.push({...section,text,words:tokenize(text),index:sentences.length});}));
+    if(!sentences.length)throw new Error("النص غير كافٍ للتلخيص. للصور استخدم OCR أولًا.");
+    if(sentences.length>20000)throw new Error("المستند كبير للتلخيص المحلي؛ حدد صفحات أقل.");
+    const frequency=new Map();sentences.forEach(s=>s.words.forEach(word=>frequency.set(word,(frequency.get(word)||0)+1)));
+    const seen=new Set();const chosen=sentences.map(s=>({...s,score:s.words.reduce((sum,word)=>sum+Math.log(1+frequency.get(word)),0)/Math.sqrt(Math.max(1,s.words.length))})).sort((a,b)=>b.score-a.score).filter(s=>{const key=s.text.replace(/\s+/g,' ');if(seen.has(key))return false;seen.add(key);return true;}).slice(0,limit).sort((a,b)=>a.index-b.index);
+    const output='ملخص استخراجي محلي — جمل مقتبسة من المستند، وليست استنتاجات أو ترجمة. راجع الأصل.\n\n'+chosen.map((s,i)=>(i+1)+'. '+s.text+'\nالمصدر: '+s.name+' — صفحة '+s.page).join('\n\n');
+    const blob=new Blob(['\uFEFF',output],{type:'text/plain;charset=utf-8'});return {blob,name:base+'-summary.txt',size:blob.size};
+  }
+
+  parseCsv(text, delimiter=',') {
+    text=text.replace(/^\uFEFF/,'');const rows=[];let row=[],value='',quoted=false,afterQuote=false;
+    for(let i=0;i<text.length;i++){
+      const ch=text[i];
+      if(quoted){if(ch==='"'){if(text[i+1]==='"'){value+='"';i++;}else{quoted=false;afterQuote=true;}}else value+=ch;continue;}
+      if(ch==='"'){if(value||afterQuote)throw new Error("تنسيق CSV غير صالح عند علامة اقتباس.");quoted=true;}
+      else if(ch===delimiter){row.push(value);value='';afterQuote=false;}
+      else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(value);rows.push(row);row=[];value='';afterQuote=false;}
+      else {if(afterQuote)throw new Error("توجد أحرف بعد إغلاق حقل CSV المقتبس.");value+=ch;}
+      if(rows.length>100000)throw new Error("عدد صفوف CSV يتجاوز حد 100000.");
+    }
+    if(quoted)throw new Error("يوجد اقتباس غير مغلق في CSV.");if(value||row.length||afterQuote) {row.push(value);rows.push(row);}
+    if(!rows.length)throw new Error("ملف CSV فارغ.");
+    if(rows.some(row=>row.length>16384))throw new Error("عدد الأعمدة يتجاوز حد Excel.");return rows;
+  }
+
+  async rowsToXlsx(rows, base) {
+    if(rows.length>100001 || rows.some(row=>row.length>16384)) throw new Error("عدد الصفوف أو الأعمدة يتجاوز حدود التصدير.");
+    const col=n=>{let label='';for(n++;n>0;n=Math.floor((n-1)/26))label=String.fromCharCode(65+(n-1)%26)+label;return label;};
+    const clean=s=>this.escapeHtml(String(s).slice(0,32767).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,''));
+    const data=rows.map((row,i)=>'<row r="'+(i+1)+'">'+row.map((value,j)=>'<c r="'+col(j)+(i+1)+'" t="inlineStr"><is><t xml:space="preserve">'+clean(value)+'</t></is></c>').join('')+'</row>').join('');
+    const zip=new JSZip();
+    zip.file('[Content_Types].xml','<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
+    zip.file('_rels/.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    zip.file('xl/workbook.xml','<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>');
+    zip.file('xl/_rels/workbook.xml.rels','<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
+    zip.file('xl/worksheets/sheet1.xml','<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+data+'</sheetData></worksheet>');
+    const bytes=await zip.generateAsync({type:'arraybuffer'}),blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});return {blob,name:base+'.xlsx',size:blob.size};
+  }
+
+  cleanSpreadsheetRows(rows, options) {
+    const seen=new Set();return rows.map(row=>row.map(value=>options.trim?String(value).trim():String(value))).filter(row=>{
+      if(options.blank&&row.every(value=>!value.trim()))return false;
+      if(options.duplicate){const canonical=[...row];while(canonical.length&&canonical[canonical.length-1]==='')canonical.pop();const key=JSON.stringify(canonical);if(seen.has(key))return false;seen.add(key);}
+      return true;
+    });
+  }
+
+  async convertOfficeData(operation, base) {
+    if(['wordPowerpoint','excelPowerpoint','splitWord'].includes(operation)) {
+      let text='';
+      if(operation==='excelPowerpoint'){
+        const csv=await this.convertOfficeData('excelCsv',base),zip=await JSZip.loadAsync(await csv.blob.arrayBuffer());const sections=[];
+        for(const path of Object.keys(zip.files).filter(path=>path.endsWith('.csv')))sections.push(path.slice(0,-4)+'\n'+this.parseCsv(await zip.file(path).async('string')).map(row=>row.join(' | ')).join('\n'));
+        text=sections.join('\n\n');
+      }else text=(await(await this.convertOfficeData('wordText',base)).blob.text()).replace(/^\uFEFF/,'');
+      if(!text.trim())throw new Error("لا يوجد نص قابل للتحويل.");
+      if(text.length>500000)throw new Error("النص أكبر من حد هذه الأداة. استخدم مستندًا أصغر.");
+      if(operation==='splitWord') {
+        const count=Number(this.getElement('#wordSplitParagraphs').value);if(!Number.isInteger(count)||count<1||count>2000)throw new Error("عدد الفقرات يجب أن يكون بين ١ و٢٠٠٠.");
+        const paragraphs=text.split('\n').filter(line=>line.trim());if(Math.ceil(paragraphs.length/count)>100)throw new Error("الناتج يتجاوز 100 ملف؛ زِد عدد الفقرات لكل ملف.");const zip=new JSZip();
+        for(let start=0;start<paragraphs.length;start+=count){if(this.app.cancelled)throw new Error("تم إلغاء العملية.");const part=paragraphs.slice(start,start+count).join('\n');const result=await this.exportDocumentTool('pdfWord',[{selected:true,number:1,fileName:base,pdf:{getPage:async()=>({getTextContent:async()=>({items:part.split('\n').map(str=>({str,hasEOL:true}))})})}}],base+'-part-'+(start/count+1));zip.file(result.name,await result.blob.arrayBuffer());this.app.progress(Math.min(90,(start+count)/paragraphs.length*90),'تقسيم نص Word','جزء '+(start/count+1));}
+        const blob=await zip.generateAsync({type:'blob'});return {blob,name:base+'-parts.zip',size:blob.size};
+      }
+      return this.textToPresentation(text,base);
+    }
+
+    if(operation==='mergeWord') {
+      const files=this.app.files.files;if(files.length<2||files.length>10)throw new Error("أضف من ملفين إلى 10 ملفات DOCX.");
+      const sections=[];let length=0;
+      for(let i=0;i<files.length;i++) {
+        if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+        const converter=Object.create(this);converter.app=Object.create(this.app);converter.app.files={files:[files[i]]};
+        const output=await converter.convertOfficeData('wordText',base);const text=(await output.blob.text()).replace(/^\uFEFF/,'');length+=text.length;
+        if(length>2000000)throw new Error("إجمالي النصوص أكبر من حد مليوني حرف.");
+        sections.push({selected:true,number:i+1,fileName:files[i].name,pdf:{getPage:async()=>({getTextContent:async()=>({items:[{str:files[i].name,hasEOL:true},...text.split('\n').map(str=>({str,hasEOL:true}))]})})}});
+        this.app.progress((i+1)/files.length*80,'جمع نصوص Word','ملف '+(i+1));
+      }
+      return this.exportDocumentTool('pdfWord',sections,base);
+    }
+
+    if(operation==='mergeExcel') {
+      const files=this.app.files.files;if(files.length<2||files.length>10)throw new Error("أضف ملفي XLSX على الأقل، وحتى 10 ملفات.");
+      const rows=[['الملف المصدر','الورقة المصدر','رقم الصف','البيانات…']];
+      for(let i=0;i<files.length;i++) {
+        if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+        const converter=Object.create(this);converter.app=Object.create(this.app);converter.app.files={files:[files[i]]};
+        const output=await converter.convertOfficeData('excelCsv',base),zip=await JSZip.loadAsync(await output.blob.arrayBuffer());
+        for(const path of Object.keys(zip.files).filter(path=>path.endsWith('.csv'))){const parsed=this.parseCsv(await zip.file(path).async('string'));parsed.forEach((row,index)=>rows.push([files[i].name,path.slice(0,-4),String(index+1),...row]));if(rows.length>100000)throw new Error("عدد الصفوف المجمعة يتجاوز 100000.");}
+        this.app.progress((i+1)/files.length*90,'جمع بيانات Excel','ملف '+(i+1));
+      }
+      return this.rowsToXlsx(rows,base);
+    }
+
+    if(['powerpointWord','powerpointExcel','wordExcel'].includes(operation)) {
+      const sourceOperation=operation==='wordExcel'?'wordText':'powerpointText';
+      const extracted=await this.convertOfficeData(sourceOperation,base);
+      const text=(await extracted.blob.text()).replace(/^\uFEFF/,'');
+      if(!text.trim())throw new Error("لا يوجد نص قابل للاستخراج.");
+      if(text.length>2000000)throw new Error("حجم النص يتجاوز حد التحويل؛ استخدم ملفًا أصغر.");
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const name=this.app.files.files[0].name||base;
+      if(operation==='powerpointWord')return this.exportDocumentTool('pdfWord',[{selected:true,number:1,fileName:name,pdf:{getPage:async()=>({getTextContent:async()=>({items:text.split('\n').map(str=>({str,hasEOL:true}))})})}}],base);
+      const lines=text.split('\n');if(lines.length>100000)throw new Error("عدد الأسطر يتجاوز حد التحويل.");
+      const rows=[['المصدر','رقم السطر','النص']];lines.forEach((line,index)=>{if(line.trim())rows.push([name,String(index+1),line]);});
+      return this.rowsToXlsx(rows,base);
+    }
+
+    if(operation==='wordMarkdown') {
+      const source=await this.convertOfficeData('wordText',base);const text=(await source.blob.text()).replace(/^\uFEFF/,'');
+      const escaped=text.replace(/([\\`*_{}\[\]<>#!|])/g,'\\$1');
+      const blob=new Blob(['\uFEFF',escaped],{type:'text/markdown;charset=utf-8'});return {blob,name:base+'.md',size:blob.size};
+    }
+    if(operation==='cleanExcel'||operation==='excelWord') {
+      const csv=await this.convertOfficeData('excelCsv',base),archive=await JSZip.loadAsync(await csv.blob.arrayBuffer());const output=new JSZip(),sections=[],report=[];
+      for(const path of Object.keys(archive.files).filter(path=>path.endsWith('.csv'))) {
+        if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+        const rows=this.parseCsv(await archive.file(path).async('string'));
+        if(operation==='cleanExcel'){
+          const cleaned=this.cleanSpreadsheetRows(rows,{trim:this.getElement('#cleanTrim').checked,blank:this.getElement('#cleanBlank').checked,duplicate:this.getElement('#cleanDuplicate').checked});
+          const result=await this.rowsToXlsx(cleaned,path.slice(0,-4));output.file(result.name,await result.blob.arrayBuffer());report.push(path+': '+rows.length+' → '+cleaned.length+' صف');
+        } else sections.push(path+'\n'+rows.map(row=>row.join(' | ')).join('\n'));
+      }
+      if(operation==='excelWord') {
+        const text=sections.join('\n\n');if(text.length>2000000)throw new Error("حجم النص كبير؛ اختر مصنفًا أصغر.");
+        return this.exportDocumentTool('pdfWord',[{selected:true,fileName:base,number:1,pdf:{getPage:async()=>({getTextContent:async()=>({items:text.split('\n').map(str=>({str,hasEOL:true}))})})}}],base);
+      }
+      output.file('تقرير-التنظيف.txt',report.join('\n')+'\nالملفات الناتجة تحتوي قيمًا نصية دون الصيغ أو التنسيقات. راجع الأصل قبل الاستبدال.');const blob=await output.generateAsync({type:'blob'});return {blob,name:base+'-cleaned.zip',size:blob.size};
+    }
+
+    const files=this.app.files.files;if(files.length!==1||!files[0].rawFile)throw new Error("أضف ملفًا واحدًا بالصّيغة المطلوبة.");
+    const raw=files[0].rawFile;
+    if(operation==='wordHtml'||operation==='excelHtml') {
+      const source=await this.convertOfficeData(operation==='wordHtml'?'wordText':'excelCsv',base);
+      let body='';
+      if(operation==='wordHtml')body='<h1>'+this.escapeHtml(raw.name)+'</h1><pre>'+this.escapeHtml(await source.blob.text())+'</pre>';
+      else {
+        const archive=await JSZip.loadAsync(await source.blob.arrayBuffer());
+        for(const path of Object.keys(archive.files).filter(path=>path.endsWith('.csv'))){
+          if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+          const rows=this.parseCsv(await archive.file(path).async('string'));
+          body+='<section><h2>'+this.escapeHtml(path.slice(0,-4))+'</h2><table>'+rows.map(row=>'<tr>'+row.map(cell=>'<td>'+this.escapeHtml(cell)+'</td>').join('')+'</tr>').join('')+'</table></section>';
+        }
+      }
+      const html='<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+this.escapeHtml(base)+'</title><style>body{font:16px/1.8 Arial;margin:24px}pre{white-space:pre-wrap;font:inherit}table{border-collapse:collapse}td{border:1px solid #aaa;padding:8px;white-space:pre-wrap}section{overflow:auto;margin-bottom:30px}</style><body>'+body+'</body></html>';
+      const blob=new Blob([html],{type:'text/html;charset=utf-8'});return {blob,name:base+'.html',size:blob.size};
+    }
+    if(operation==='csvExcel'){const chosen=this.getElement('#csvDelimiter').value;return this.rowsToXlsx(this.parseCsv(await raw.text(),chosen==='tab'?'\t':chosen),base);}
+    const zip=await JSZip.loadAsync(await raw.arrayBuffer());let total=0;
+    for(const entry of Object.values(zip.files)){total+=entry._data?.uncompressedSize||0;if(total>80*1024*1024)throw new Error("حجم محتوى الملف بعد فك الضغط يتجاوز 80 MB.");}
+    if(['wordImages','powerpointImages','excelImages'].includes(operation)) {
+      const folder=operation==='wordImages'?'word/media/':operation==='powerpointImages'?'ppt/media/':'xl/media/';
+      const paths=Object.keys(zip.files).filter(path=>path.startsWith(folder)&&!zip.files[path].dir&&/\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(path)).sort();
+      if(!paths.length)throw new Error("لا توجد صور مضمّنة بصيغة مدعومة في الملف. الأشكال والصور المرتبطة خارجيًا لا تُستخرج.");
+      if(paths.length>1000)throw new Error("عدد الصور يتجاوز حد 1000 صورة.");
+      const output=new JSZip();const manifest=[];
+      for(let i=0;i<paths.length;i++) {
+        if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+        const name=(i+1)+'-'+paths[i].split('/').pop().replace(/[^a-zA-Z0-9._-]/g,'_');
+        output.file(name,await zip.file(paths[i]).async('uint8array'));manifest.push(name+' ← '+paths[i]);
+        this.app.progress((i+1)/paths.length*90,'استخراج الصور','صورة '+(i+1));
+      }
+      output.file('اقرأني.txt','هذه الصور المضمّنة في الملف وليست صورًا للصفحات أو الشرائح. قد توجد صور غير مستخدمة أو مكررة داخل المستند. ترتيب الملفات لا يحدد ترتيب ظهورها.\n\n'+manifest.join('\n'));
+      const blob=await output.generateAsync({type:'blob'});return {blob,name:base+'-images.zip',size:blob.size};
+    }
+    const parse=async path=>{if(this.app.cancelled)throw new Error("تم إلغاء العملية.");const file=zip.file(path);if(!file)throw new Error("ملف Office غير مكتمل: "+path);const xml=new DOMParser().parseFromString(await file.async('string'),'application/xml');if(xml.getElementsByTagName('parsererror').length)throw new Error("تعذر قراءة XML داخل ملف Office.");return xml;};
+    const nodes=(node,name)=>Array.from(node.getElementsByTagNameNS('*',name));
+    if(operation==='wordText'){
+      const xml=await parse('word/document.xml');const text=nodes(xml,'p').map(p=>nodes(p,'t').map(t=>t.textContent).join('')).join('\n');if(!text.trim())throw new Error("المستند لا يحتوي نصًا قابلًا للاستخراج.");const blob=new Blob(['\uFEFF',text],{type:'text/plain;charset=utf-8'});return {blob,name:base+'.txt',size:blob.size};
+    }
+    if(operation==='powerpointText'){
+      const presentation=await parse('ppt/presentation.xml'),rels=await parse('ppt/_rels/presentation.xml.rels');
+      const slideTargets=new Map(nodes(rels,'Relationship').filter(r=>r.getAttribute('TargetMode')!=='External').map(r=>[r.getAttribute('Id'),r.getAttribute('Target')]));
+      const slides=nodes(presentation,'sldId').map(node=>{const id=node.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id'),target=slideTargets.get(id);if(!target)throw new Error("رابط شريحة غير صالح.");return new URL(target,'https://local/ppt/').pathname.slice(1);});
+      if(!slides.length)throw new Error("لا توجد شرائح في PPTX.");
+      const sections=[];for(let i=0;i<slides.length;i++){const xml=await parse(slides[i]);sections.push('--- شريحة '+(i+1)+' ---\n'+nodes(xml,'p').map(p=>nodes(p,'t').map(t=>t.textContent).join('')).join('\n'));this.app.progress((i+1)/slides.length*90,'استخراج نص الشرائح','شريحة '+(i+1));}const blob=new Blob(['\uFEFF',sections.join('\n\n')],{type:'text/plain;charset=utf-8'});return {blob,name:base+'.txt',size:blob.size};
+    }
+    const workbook=await parse('xl/workbook.xml'),relationships=await parse('xl/_rels/workbook.xml.rels');const targets=new Map(nodes(relationships,'Relationship').filter(r=>r.getAttribute('TargetMode')!=='External').map(r=>[r.getAttribute('Id'),r.getAttribute('Target')]));
+    let shared=[];if(zip.file('xl/sharedStrings.xml'))shared=nodes(await parse('xl/sharedStrings.xml'),'si').map(si=>nodes(si,'t').map(t=>t.textContent).join(''));
+    const sheets=nodes(workbook,'sheet');if(!sheets.length)throw new Error("لا توجد أوراق في المصنف.");const output=new JSZip();const quote=value=>'"'+String(value).replaceAll('"','""')+'"';
+    for(let i=0;i<sheets.length;i++){
+      const sheet=sheets[i],id=sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');const target=targets.get(id);if(!target)throw new Error("رابط ورقة غير صالح.");const path=new URL(target,'https://local/xl/').pathname.slice(1);const xml=await parse(path);const rows=[];
+      for(const row of nodes(xml,'row')){const rowNumber=Number(row.getAttribute('r')||rows.length+1);if(rowNumber>100000)throw new Error('الورقة تتجاوز 100000 صف.');while(rows.length<rowNumber-1)rows.push('');const cells=[];for(const cell of nodes(row,'c')){const ref=cell.getAttribute('r')||'';const letters=(ref.match(/^[A-Z]+/i)||[])[0];let col=cells.length;if(letters){col=0;for(const ch of letters.toUpperCase())col=col*26+ch.charCodeAt(0)-64;col--; }if(col>16383)throw new Error("عمود خارج حدود Excel.");const type=cell.getAttribute('t');const value=nodes(cell,'v')[0]?.textContent||'';cells[col]=type==='s'?(shared[Number(value)]||''):type==='inlineStr'?nodes(cell,'t').map(t=>t.textContent).join(''):type==='b'?(value==='1'?'TRUE':'FALSE'):value;if((type==='s'||type==='inlineStr')&&/^[=+@-]/.test(cells[col]))cells[col]="'"+cells[col];}
+        rows.push(Array.from({length:cells.length},(_,j)=>quote(cells[j]||'')).join(','));if(rows.length>100000)throw new Error("الورقة تتجاوز 100000 صف.");}
+      const name=(sheet.getAttribute('name')||'sheet').replace(/[<>:"/\\|?*]/g,'_');output.file((i+1)+'-'+name+'.csv','\uFEFF'+rows.join('\r\n'));this.app.progress((i+1)/sheets.length*90,'تصدير أوراق CSV','ورقة '+(i+1));
+    }
+    output.file('اقرأني.txt','البيانات من القيم المحفوظة في XLSX. لا تُحسب الصيغ مجددًا ولا ينتقل التنسيق؛ قد تظهر التواريخ كأرقام Excel. تحقق من البيانات قبل اعتمادها.\n');const blob=await output.generateAsync({type:'blob'});return {blob,name:base+'-csv.zip',size:blob.size};
+  }
+
+  async convertImageFile(operation, base) {
+    const files=this.app.files.files;
+    if(files.length!==1||!files[0].rawFile)throw new Error("اختر صورة واحدة أولًا.");
+    const raw=files[0].rawFile;
+    if(raw.size>25*1024*1024)throw new Error("الصورة أكبر من 25 MB.");
+    if(typeof globalThis.createImageBitmap!=='function')throw new Error("استخدم متصفحًا حديثًا يدعم معالجة الصور.");
+    let bitmap;
+    try {bitmap=await createImageBitmap(raw);}catch{throw new Error("تعذر قراءة الصورة. تأكد من سلامتها وصيغتها.");}
+    let canvas;
+    try {
+      if(bitmap.width*bitmap.height>40000000)throw new Error("الصورة تتجاوز حد 40 مليون بكسل.");
+      let width=bitmap.width,height=bitmap.height;
+      if(operation==='resizeImage') {
+        width=Number(this.getElement('#resizeWidth').value);
+        height=this.getElement('#resizeKeepRatio').checked?Math.round(bitmap.height*width/bitmap.width):Number(this.getElement('#resizeHeight').value);
+        if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>8192||height>8192||width*height>40000000)throw new Error("الأبعاد يجب أن تكون أعدادًا صحيحة بين ١ و٨١٩٢، وبحد إجمالي 40 مليون بكسل.");
+      }
+      const mime=operation==='imageWebp'?'image/webp':['imageJpg','compressImage'].includes(operation)?'image/jpeg':'image/png';
+      const quality=Number(this.getElement('#convertImageQuality').value);
+      if(mime!=='image/png'&&(!Number.isFinite(quality)||quality<0.1||quality>1))throw new Error("جودة الصورة غير صالحة.");
+      canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+      const ctx=canvas.getContext('2d');if(!ctx)throw new Error("تعذر تجهيز مساحة معالجة الصورة.");
+      if(mime==='image/jpeg'){ctx.fillStyle='#FFFFFF';ctx.fillRect(0,0,width,height);}
+      ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(bitmap,0,0,width,height);
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const blob=await this.canvasToBlob(canvas,mime,quality);
+      if(blob.type!==mime)throw new Error("المتصفح لا يدعم تصدير الصيغة المطلوبة. جرّب PNG أو JPG.");
+      const extension=mime==='image/jpeg'?'jpg':mime.split('/')[1];
+      this.app.progress(95,'اكتملت معالجة الصورة',width+' × '+height+' بكسل');
+      return {blob,name:base+'.'+extension,size:blob.size};
+    } finally {bitmap.close();if(canvas){canvas.width=0;canvas.height=0;}}
+  }
+
+  async imageOcr(operation, base) {
+    const files=this.app.files.files;
+    if(files.length!==1||!files[0].rawFile)throw new Error("اختر صورة واحدة أولًا.");
+    if(!globalThis.Tesseract?.createWorker)throw new Error("مكتبة OCR لم تُحمّل؛ تحقق من الاتصال.");
+    const file=files[0].rawFile;if(file.size>25*1024*1024)throw new Error("الصورة أكبر من 25 MB.");
+    if(typeof createImageBitmap==='function'){const bitmap=await createImageBitmap(file);try{if(bitmap.width*bitmap.height>40000000)throw new Error("الصورة أكبر من 40 مليون بكسل.");}finally{bitmap.close();}}
+    const language=this.getElement('#ocrLang').value;
+    if(!['ara','eng','ara+eng'].includes(language))throw new Error("لغة OCR غير مدعومة.");
+    let worker;
+    try {
+      this.app.progress(5,'تحميل محرك OCR','قد يستغرق تحميل اللغة أول مرة بعض الوقت.');
+      worker=await Tesseract.createWorker(language,1,{logger:message=>{if(typeof message.progress==='number')this.app.progress(Math.min(90,Math.round(message.progress*85)+5),'التعرف على نص الصورة','تتم المعالجة داخل المتصفح.');}});
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const result=await worker.recognize(file);if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const text=(result.data.text||'').trim();if(!text)throw new Error("لم يتعرف المحرك على نص. جرّب صورة أوضح أو لغة مختلفة.");
+      if(operation==='imageWord')return this.exportDocumentTool('pdfWord',[{selected:true,number:1,fileName:file.name,pdf:{getPage:async()=>({getTextContent:async()=>({items:text.split('\n').map(str=>({str,hasEOL:true}))})})}}],base);
+      const blob=new Blob(['\uFEFF',text],{type:'text/plain;charset=utf-8'});return {blob,name:base+'.txt',size:blob.size};
+    } finally {if(worker)await worker.terminate();}
+  }
+
+  async splitPresentation(base) {
+    const files=this.app.files.files;if(files.length!==1||!files[0].rawFile)throw new Error("أضف ملف PPTX واحدًا.");
+    const bytes=await files[0].rawFile.arrayBuffer(),original=await JSZip.loadAsync(bytes);
+    let size=0;for(const part of Object.values(original.files)){size+=part._data?.uncompressedSize||0;if(size>80*1024*1024)throw new Error("محتوى العرض يتجاوز 80 MB.");}
+    const parse=async(zip,path)=>{const part=zip.file(path);if(!part)throw new Error("جزء مفقود في العرض: "+path);const doc=new DOMParser().parseFromString(await part.async('string'),'application/xml');if(doc.getElementsByTagName('parsererror').length)throw new Error("XML غير صالح في العرض.");return doc;};
+    const nodes=(doc,name)=>Array.from(doc.getElementsByTagNameNS('*',name));
+    const serialize=doc=>new XMLSerializer().serializeToString(doc);
+    const resolve=(part,target)=>{const url=new URL(target,'https://package/'+part);if(url.origin!=='https://package')throw new Error("مسار غير صالح داخل العرض.");return decodeURIComponent(url.pathname.slice(1));};
+    const relPath=part=>{const i=part.lastIndexOf('/');return part.slice(0,i+1)+'_rels/'+part.slice(i+1)+'.rels';};
+    const presentation=await parse(original,'ppt/presentation.xml');const sourceSlides=nodes(presentation,'sldId');
+    if(!sourceSlides.length||sourceSlides.length>100)throw new Error("حد التقسيم من شريحة واحدة إلى 100 شريحة.");
+    const relationships=await parse(original,'ppt/_rels/presentation.xml.rels');
+    const targets=new Map(nodes(relationships,'Relationship').filter(r=>r.getAttribute('TargetMode')!=='External').map(r=>[r.getAttribute('Id'),resolve('ppt/presentation.xml',r.getAttribute('Target'))]));
+    const rns='http://schemas.openxmlformats.org/officeDocument/2006/relationships',output=new JSZip();let outputSize=0;
+    for(let index=0;index<sourceSlides.length;index++) {
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const id=sourceSlides[index].getAttributeNS(rns,'id'),slidePath=targets.get(id);if(!slidePath||!original.file(slidePath))throw new Error("مرجع شريحة مفقود.");
+      const zip=await JSZip.loadAsync(bytes),p=await parse(zip,'ppt/presentation.xml'),pr=await parse(zip,'ppt/_rels/presentation.xml.rels');
+      nodes(p,'sldId').forEach(node=>{if(node.getAttributeNS(rns,'id')!==id)node.parentNode.removeChild(node);});
+      for(const tag of ['sectionLst','custShowLst','extLst','notesMasterIdLst'])nodes(p,tag).forEach(node=>node.parentNode.removeChild(node));
+      nodes(pr,'Relationship').forEach(node=>{const type=node.getAttribute('Type')||'';if((type.endsWith('/slide')&&node.getAttribute('Id')!==id)||/\/(notesMaster|commentAuthors|comments)$/.test(type))node.parentNode.removeChild(node);});
+      zip.file('ppt/presentation.xml',serialize(p));zip.file('ppt/_rels/presentation.xml.rels',serialize(pr));
+      const slide=await parse(zip,slidePath),srPath=relPath(slidePath);
+      if(zip.file(srPath)){
+        const sr=await parse(zip,srPath),removedIds=new Set();
+        nodes(sr,'Relationship').forEach(node=>{const type=node.getAttribute('Type')||'';if(/\/(slide|notesSlide|comments|commentAuthors)$/.test(type)){removedIds.add(node.getAttribute('Id'));node.parentNode.removeChild(node);}});
+        for(const tag of ['hlinkClick','hlinkHover'])nodes(slide,tag).forEach(node=>{if(removedIds.has(node.getAttributeNS(rns,'id')))node.parentNode.removeChild(node);});
+        zip.file(srPath,serialize(sr));zip.file(slidePath,serialize(slide));
+      }
+      // Keep only package parts reachable through the retained relationships.
+      const rootRels=await parse(zip,'_rels/.rels');nodes(rootRels,'Relationship').forEach(node=>{if((node.getAttribute('Type')||'').endsWith('/thumbnail'))node.parentNode.removeChild(node);});zip.file('_rels/.rels',serialize(rootRels));
+      const keep=new Set(['[Content_Types].xml','_rels/.rels']);const pending=[''];
+      while(pending.length){const part=pending.pop(),rp=part?relPath(part):'_rels/.rels';if(!zip.file(rp))continue;keep.add(rp);const doc=await parse(zip,rp);for(const relation of nodes(doc,'Relationship')){if(relation.getAttribute('TargetMode')==='External')continue;const target=resolve(part,relation.getAttribute('Target'));if(!keep.has(target)){if(!zip.file(target))throw new Error("مرجع داخلي مفقود: "+target);keep.add(target);pending.push(target);}}}
+      Object.keys(zip.files).forEach(path=>{if(!zip.files[path].dir&&!keep.has(path))zip.remove(path);});
+      const types=await parse(zip,'[Content_Types].xml');nodes(types,'Override').forEach(node=>{const path=decodeURIComponent((node.getAttribute('PartName')||'').replace(/^\//,''));if(!zip.file(path))node.parentNode.removeChild(node);});zip.file('[Content_Types].xml',serialize(types));
+      const result=await zip.generateAsync({type:'uint8array'});outputSize+=result.length;if(outputSize>150*1024*1024)throw new Error("الناتج أكبر من 150 MB. استخدم عرضًا أصغر.");output.file(base+'-slide-'+(index+1)+'.pptx',result);
+      this.app.progress((index+1)/sourceSlides.length*90,'تقسيم PowerPoint','شريحة '+(index+1));
+    }
+    output.file('اقرأني.txt','كل عرض يحتوي شريحة واحدة حسب ترتيب المصدر. أزيلت الملاحظات والتعليقات والروابط الداخلية إلى شرائح أخرى. قد تحتفظ القوالب بتخطيطات أو صور مشتركة تستخدمها الشرائح. راجع العروض داخل PowerPoint قبل اعتمادها.\n');const blob=await output.generateAsync({type:'blob'});return {blob,name:base+'-slides.zip',size:blob.size};
+  }
+
+  chunkPresentationText(text) {
+    const chunks=[];let current='';
+    for(const paragraph of String(text).split('\n')){
+      const fragments=paragraph.match(/[\s\S]{1,1000}/gu)||[''];
+      for(const fragment of fragments){
+        if(current&&(current.length+fragment.length+1>1200||current.split('\n').length>=14)){chunks.push(current);current='';}
+        current+=(current?'\n':'')+fragment;
+      }
+    }
+    if(current.trim())chunks.push(current);return chunks;
+  }
+
+  async textToPresentation(text, base) {
+    const Constructor=globalThis.pptxgen||globalThis.PptxGenJS;if(!Constructor)throw new Error("مكتبة PowerPoint لم تُحمّل.");
+    const chunks=this.chunkPresentationText(text);if(!chunks.length||chunks.length>100)throw new Error("حد العرض 100 شريحة نصية. استخدم نصًا أقصر.");
+    const ppt=new Constructor();ppt.layout='LAYOUT_WIDE';ppt.title=base;ppt.author='مساحة';ppt.lang='ar-SA';
+    for(let i=0;i<chunks.length;i++){
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const slide=ppt.addSlide();slide.background={color:'FFFFFF'};
+      slide.addText(base+' — '+(i+1),{x:.5,y:.2,w:12.3,h:.45,fontFace:'Arial',fontSize:18,bold:true,rtlMode:true,align:'right',color:'181916'});
+      slide.addText(chunks[i],{x:.6,y:.9,w:12.1,h:5.8,fontFace:'Arial',fontSize:20,rtlMode:true,align:'right',valign:'top',breakLine:false,fit:'shrink',margin:.1,color:'181916'});
+      this.app.progress((i+1)/chunks.length*90,'إنشاء شرائح نصية','شريحة '+(i+1));
+    }
+    const bytes=await ppt.write({outputType:'arraybuffer'}),blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});return {blob,name:base+'.pptx',size:blob.size};
+  }
+
+  async mergePresentations(base) {
+    const files=this.app.files.files;if(files.length<2||files.length>10)throw new Error("أضف من عرضين إلى 10 عروض PPTX.");
+    const ns='http://schemas.openxmlformats.org',rns=ns+'/officeDocument/2006/relationships';
+    const parse=async(zip,path)=>{const file=zip.file(path);if(!file)throw new Error("جزء مفقود في العرض: "+path);const doc=new DOMParser().parseFromString(await file.async('string'),'application/xml');if(doc.getElementsByTagName('parsererror').length)throw new Error("XML غير صالح في العرض.");return doc;};
+    const nodes=(doc,name)=>Array.from(doc.getElementsByTagNameNS('*',name));
+    const serialize=doc=>new XMLSerializer().serializeToString(doc);
+    const resolve=(part,target)=>{const url=new URL(target,'https://package/'+part);if(url.origin!=='https://package')throw new Error("مسار غير صالح داخل العرض.");return decodeURIComponent(url.pathname.slice(1));};
+    const owner=path=>path==='_rels/.rels'?'':path.replace(/(^|\/)\_rels\//,'$1').replace(/\.rels$/,'');
+    const relPath=part=>{const index=part.lastIndexOf('/');return part.slice(0,index+1)+'_rels/'+part.slice(index+1)+'.rels';};
+    const esc=value=>this.escapeHtml(String(value));
+    const output=new JSZip(),defaults=new Map(),overrides=new Map(),relationships=[],slideIds=[],masterIds=[];
+    let slideNumber=0,relationshipNumber=0,masterNumber=0,width=0,height=0,total=0;
+    const relation=(type,target)=>{const id='rId'+(++relationshipNumber);relationships.push('<Relationship Id="'+id+'" Type="'+rns+'/'+type+'" Target="'+esc(target)+'"/>');return id;};
+    for(let index=0;index<files.length;index++) {
+      if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+      const file=files[index];if(!file.rawFile)throw new Error("ملف عرض غير صالح.");
+      const input=await JSZip.loadAsync(await file.rawFile.arrayBuffer()),prefix='imports/'+(index+1)+'/';
+      if(Object.keys(input.files).length>15000)throw new Error("العرض يحتوي أجزاء كثيرة جدًا.");
+      for(const part of Object.values(input.files)){total+=part._data?.uncompressedSize||0;if(total>200*1024*1024)throw new Error("حجم العروض بعد فك الضغط يتجاوز 200 MB.");}
+      const presentation=await parse(input,'ppt/presentation.xml'),rels=await parse(input,'ppt/_rels/presentation.xml.rels');
+      const targets=new Map(nodes(rels,'Relationship').filter(node=>node.getAttribute('TargetMode')!=='External').map(node=>[node.getAttribute('Id'),resolve('ppt/presentation.xml',node.getAttribute('Target'))]));
+      const size=nodes(presentation,'sldSz')[0];if(!size)throw new Error("مقاس الشرائح غير موجود.");
+      const w=Number(size.getAttribute('cx')),h=Number(size.getAttribute('cy'));if(!Number.isFinite(w)||!Number.isFinite(h)||w<=0||h<=0)throw new Error("مقاس العرض غير صالح.");
+      if(!index){width=w;height=h;}else if(w!==width||h!==height)throw new Error("مقاسات العروض مختلفة. وحّد مقاس الشرائح داخل PowerPoint قبل الدمج للحفاظ على التصميم.");
+      for(const master of nodes(presentation,'sldMasterId')){const path=targets.get(master.getAttributeNS(rns,'id'));if(!path)throw new Error("مرجع قالب مفقود.");const id=relation('slideMaster','/'+prefix+path);masterIds.push('<p:sldMasterId id="'+(2147483648+masterNumber++)+'" r:id="'+id+'"/>');}
+      for(const slide of nodes(presentation,'sldId')){const path=targets.get(slide.getAttributeNS(rns,'id'));if(!path)throw new Error("مرجع شريحة مفقود.");const id=relation('slide','/'+prefix+path);slideIds.push('<p:sldId id="'+(256+slideNumber++)+'" r:id="'+id+'"/>');if(slideNumber>200)throw new Error("حد الدمج 200 شريحة.");}
+      const types=await parse(input,'[Content_Types].xml');
+      for(const node of nodes(types,'Default')){const extension=node.getAttribute('Extension'),type=node.getAttribute('ContentType');if(defaults.has(extension)&&defaults.get(extension)!==type)throw new Error("تعارض أنواع ملفات داخل العروض.");defaults.set(extension,type);}
+      for(const node of nodes(types,'Override'))overrides.set('/'+prefix+(node.getAttribute('PartName')||'').replace(/^\//,''),node.getAttribute('ContentType'));
+      const dropped=new Map();
+      for(const path of Object.keys(input.files).filter(path=>!input.files[path].dir&&path.endsWith('.rels'))){
+        const doc=await parse(input,path),part=owner(path),removed=new Set();
+        for(const node of nodes(doc,'Relationship')){
+          if(/\/(notesSlide|notesMaster|comments|commentAuthors|thumbnail)$/.test(node.getAttribute('Type')||'')){removed.add(node.getAttribute('Id'));node.parentNode.removeChild(node);continue;}
+          if(node.getAttribute('TargetMode')!=='External')node.setAttribute('Target','/'+prefix+resolve(part,node.getAttribute('Target')));
+        }
+        if(removed.size)dropped.set(part,removed);output.file(prefix+path,serialize(doc));
+      }
+      for(const path of Object.keys(input.files).filter(path=>!input.files[path].dir&&path!=='[Content_Types].xml'&&!path.endsWith('.rels'))){
+        if((dropped.has(path)||/^ppt\/slideMasters\/slideMaster\d+\.xml$/.test(path))&&path.endsWith('.xml')){
+          const doc=await parse(input,path),removed=dropped.get(path)||new Set();nodes(doc,'sldLayoutId').forEach(node=>node.setAttribute('id',String(2147483648+masterNumber++)));for(const tag of ['hlinkClick','hlinkHover'])nodes(doc,tag).forEach(node=>{if(removed.has(node.getAttributeNS(rns,'id')))node.parentNode.removeChild(node);});output.file(prefix+path,serialize(doc));
+        }else output.file(prefix+path,await input.file(path).async('uint8array'));
+      }
+      this.app.progress((index+1)/files.length*75,'دمج شرائح PowerPoint','عرض '+(index+1));
+    }
+    if(!slideNumber)throw new Error("لا توجد شرائح للدمج.");
+    output.file('ppt/presentation.xml','<?xml version="1.0" encoding="UTF-8"?><p:presentation xmlns:p="'+ns+'/presentationml/2006/main" xmlns:a="'+ns+'/drawingml/2006/main" xmlns:r="'+rns+'"><p:sldMasterIdLst>'+masterIds.join('')+'</p:sldMasterIdLst><p:sldIdLst>'+slideIds.join('')+'</p:sldIdLst><p:sldSz cx="'+width+'" cy="'+height+'"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>');
+    output.file('ppt/_rels/presentation.xml.rels','<?xml version="1.0"?><Relationships xmlns="'+ns+'/package/2006/relationships">'+relationships.join('')+'</Relationships>');
+    output.file('_rels/.rels','<?xml version="1.0"?><Relationships xmlns="'+ns+'/package/2006/relationships"><Relationship Id="rId1" Type="'+rns+'/officeDocument" Target="ppt/presentation.xml"/></Relationships>');
+    const keep=new Set(['[Content_Types].xml','_rels/.rels']),pending=[''];
+    while(pending.length){const part=pending.pop(),rp=part?relPath(part):'_rels/.rels';if(!output.file(rp))continue;keep.add(rp);const doc=await parse(output,rp);for(const node of nodes(doc,'Relationship')){if(node.getAttribute('TargetMode')==='External')continue;const target=resolve(part,node.getAttribute('Target'));if(!keep.has(target)){if(!output.file(target))throw new Error("مرجع غير مكتمل بعد الدمج: "+target);keep.add(target);pending.push(target);}}}
+    for(const path of Object.keys(output.files))if(!output.files[path].dir&&!keep.has(path))output.remove(path);
+    overrides.set('/ppt/presentation.xml','application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml');
+    const typeXml='<?xml version="1.0"?><Types xmlns="'+ns+'/package/2006/content-types">'+[...defaults].map(([ext,type])=>'<Default Extension="'+esc(ext)+'" ContentType="'+esc(type)+'"/>').join('')+[...overrides].filter(([path])=>output.file(path.slice(1))).map(([path,type])=>'<Override PartName="'+esc(path)+'" ContentType="'+esc(type)+'"/>').join('')+'</Types>';
+    output.file('[Content_Types].xml',typeXml);const data=await output.generateAsync({type:'arraybuffer'}),blob=new Blob([data],{type:'application/vnd.openxmlformats-officedocument.presentationml.presentation'});return {blob,name:base+'.pptx',size:blob.size};
+  }
+
+  async htmlFileToWord(base) {
+    const files=this.app.files.files;if(files.length!==1||!files[0].rawFile)throw new Error("اختر ملف HTML واحدًا.");
+    const raw=await files[0].rawFile.text();if(raw.length>2000000)throw new Error("HTML أكبر من مليوني حرف.");
+    // Parse as an inert document; no element is inserted into the live page.
+    const doc=new DOMParser().parseFromString(raw,'text/html');
+    doc.querySelectorAll('script,style,noscript,template,iframe,object,embed,svg,canvas,form,head').forEach(node=>node.remove());
+    doc.querySelectorAll('br').forEach(node=>node.replaceWith(doc.createTextNode('\n')));
+    const tags='p,h1,h2,h3,h4,h5,h6,li,tr,pre,blockquote';
+    const blocks=Array.from(doc.body.querySelectorAll(tags)).filter(node=>!node.querySelector(tags));
+    const text=(blocks.length?blocks.map(node=>node.textContent.trim()).join('\n'):doc.body.textContent).replace(/\u00A0/g,' ').trim();
+    if(!text)throw new Error("HTML لا يحتوي نصًا قابلًا للاستخراج.");
+    if(this.app.cancelled)throw new Error("تم إلغاء العملية.");
+    return this.exportDocumentTool('pdfWord',[{selected:true,number:1,fileName:files[0].name,pdf:{getPage:async()=>({getTextContent:async()=>({items:text.split('\n').map(str=>({str,hasEOL:true}))})})}}],base);
+  }
+
+  wrapPlainText(text, context, maxWidth) {
+    const lines=[];
+    for(const paragraph of text.replace(/\r\n?/g,'\n').split('\n')){
+      if(!paragraph){lines.push('');continue;}
+      let line='';
+      for(const word of paragraph.split(/\s+/)){
+        const proposed=line?line+' '+word:word;
+        if(context.measureText(proposed).width<=maxWidth){line=proposed;continue;}
+        if(line){lines.push(line);line='';}
+        if(context.measureText(word).width<=maxWidth){line=word;continue;}
+        for(const ch of word){if(line&&context.measureText(line+ch).width>maxWidth){lines.push(line);line='';}line+=ch;}
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+
+  async textFileToPdf(base) {
+    const files=this.app.files.files;if(files.length!==1||!files[0].rawFile)throw new Error("اختر ملف TXT واحدًا.");
+    const text=(await files[0].rawFile.text()).replace(/^\uFEFF/,'');if(!text.trim())throw new Error("الملف النصي فارغ.");if(text.length>200000)throw new Error("النص أكبر من 200000 حرف؛ قسّمه إلى ملفات أصغر.");
+    if(document.fonts?.ready)await document.fonts.ready;
+    const canvas=document.createElement('canvas');canvas.width=1240;canvas.height=1754;const ctx=canvas.getContext('2d');if(!ctx)throw new Error("تعذر تجهيز الصفحات.");
+    ctx.font='28px "IBM Plex Sans Arabic", Tahoma, Arial';
+    const lines=this.wrapPlainText(text,ctx,1080),perPage=37,count=Math.ceil(lines.length/perPage);if(count>100){canvas.width=0;canvas.height=0;throw new Error("الناتج يتجاوز 100 صفحة.");}
+    const pdf=await PDFLib.PDFDocument.create();
+    try {
+      for(let page=0;page<count;page++){
+        if(this.app.cancelled)throw new Error("تم إلغاء العملية.");ctx.fillStyle='#FFFFFF';ctx.fillRect(0,0,1240,1754);ctx.fillStyle='#181916';
+        lines.slice(page*perPage,(page+1)*perPage).forEach((line,index)=>{const rtl=/[\u0590-\u08FF]/.test(line);ctx.direction=rtl?'rtl':'ltr';ctx.textAlign=rtl?'right':'left';ctx.fillText(line,rtl?1160:80,110+index*42);});
+        const blob=await this.canvasToBlob(canvas,'image/png'),image=await pdf.embedPng(await blob.arrayBuffer());const output=pdf.addPage([595.28,841.89]);output.drawImage(image,{x:0,y:0,width:595.28,height:841.89});this.app.progress((page+1)/count*90,'إنشاء PDF من النص','صفحة '+(page+1));
+      }
+      const bytes=await pdf.save(),blob=new Blob([bytes],{type:'application/pdf'});return {blob,name:base+'.pdf',size:blob.size};
+    } finally {canvas.width=0;canvas.height=0;}
+  }
+
   async export(operation, pages, ranges) {
     pages = pages.filter(page => !page.deleted);
     const base = this.app.safeName(this.getElement("#outputName").value);
@@ -4307,6 +4805,17 @@ class ExportManager {
       const middle = Math.ceil(pages.length / 2);
       return this.export("splitRanges", pages, [{from:1,to:middle},{from:middle+1,to:pages.length}]);
     }
+    if(["imageText","imageWord"].includes(operation))return this.imageOcr(operation,base);
+    if(["imagePng","imageJpg","imageWebp","compressImage","resizeImage"].includes(operation))return this.convertImageFile(operation,base);
+    if(["csvExcel","excelCsv","wordText","powerpointText","wordHtml","excelHtml","wordMarkdown","cleanExcel","excelWord","powerpointWord","powerpointExcel","wordExcel","mergeExcel","wordImages","powerpointImages","excelImages","mergeWord","wordPowerpoint","excelPowerpoint","splitWord"].includes(operation))return this.convertOfficeData(operation,base);
+    if(operation === "textPdf")return this.textFileToPdf(base);
+    if(operation === "htmlWord")return this.htmlFileToWord(base);
+    if(operation === "mergePowerpoint")return this.mergePresentations(base);
+    if(operation === "splitPowerpoint")return this.splitPresentation(base);
+    if(operation === "editPdf")return this.addTextToPdf(pages,base);
+    if(operation === "summarizePdf")return this.summarizePdfText(pages,base);
+    if(operation === "redactPdf") return this.redactPages(pages,base);
+    if(operation === "workflow") return this.exportBatch(pages,base,ranges);
     if (operation === "qrText") return this.createTextQr(this.getElement("#qrText").value, base);
     if (operation === "qrLink") return this.createLinkQr(this.getElement("#qrUrl").value, base);
     if (operation === "qrFile") return this.createFileQr(base);
@@ -4473,9 +4982,8 @@ class ExportManager {
   }
 }
 
-return ExportManager;
-})();
-const toolIcon = (() => {
+return ExportManager;})();
+const toolIcon=(()=>{
 const paths = {
   merge: '<path d="M8 3H3v14h5M16 7h5v14h-5M8 7h8v14H8zM11 3h5v4"/>',
   splitRanges: '<path d="M7 3h10v7M7 14v7h10v-7M3 12h18M5 9l-3 3 3 3m14-6 3 3-3 3"/>',
@@ -4496,13 +5004,13 @@ paths.barcode = '<path d="M2 3v18M5 3v18M9 3v18M11 3v18M15 3v18M18 3v18M22 3v18"
 paths.reportPdf = paths.summarizePdf;
 paths.qrLink='<path d="M2 2h7v7H2zM15 2h7v7h-7zM2 15h7v7H2zM15 15h3v3h4v4h-7z"/>';paths.barcode=paths.qrLink;paths.qrText=paths.qrLink;paths.qrFile=paths.qrLink;paths.firstPage=paths.extract;paths.lastPage=paths.extract;
 function toolIcon(id) {
+  if(!paths[id]){if(id.toLowerCase().includes("powerpoint"))id="pdfPowerpoint";else if(id.toLowerCase().includes("excel")||id==="csvExcel")id="pdfExcel";else if(id.toLowerCase().includes("word"))id="pdfWord";else if(id.toLowerCase().includes("image"))id="images";else if(id.toLowerCase().includes("html")||id.toLowerCase().includes("text")||id.toLowerCase().includes("markdown"))id="text";}
   id=aliases[id]||id;
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter" aria-hidden="true">${paths[id] || paths.merge}</svg>`;
 }
 
-return toolIcon;
-})();
-const AppUI = (() => {
+return toolIcon;})();
+const AppUI=(()=>{
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -4612,13 +5120,31 @@ categories.splice(3, 0, {
   ]
 });
 
-const templateGroups = [["convert-templates","تحويل PDF",[["pdfWord","DOC","PDF ← Word"],["pdfPowerpoint","PPT","PDF ← PowerPoint"],["pdfExcel","XLS","PDF ← Excel"],["wordPdf","DOC","Word ← PDF"],["powerpointPdf","PPT","PowerPoint ← PDF"],["excelPdf","XLS","Excel ← PDF"],["htmlPdf","HTML","HTML ← PDF"],["pdfMarkdown","MD","PDF ← Markdown"]]],["edit-templates","تعديل PDF",[["editPdf","EDIT","تعديل PDF"],["signPdf","SIGN","توقيع PDF"],["watermarkPdf","WM","علامة مائية"],["numberPdf","123","ترقيم الصفحات"],["cropPdf","CROP","قص صفحات PDF"],["formsPdf","FORM","نماذج PDF"]]],["security-templates","حماية PDF",[["unlockPdf","LOCK","إزالة كلمة مرور PDF"],["protectPdf","LOCK","حماية PDF بكلمة مرور"],["redactPdf","HIDE","حجب البيانات الحساسة"]]],["optimize-templates","تحسين PDF",[["pdfArchive","PDF/A","PDF ← PDF/A"],["scanPdf","SCAN","مسح ← PDF"],["searchablePdf","OCR","PDF قابل للبحث"]]],["intelligence-templates","أدوات ذكية",[["comparePdf","DIFF","مقارنة PDF"],["summarizePdf","AI","تلخيص PDF"],["translatePdf","LANG","ترجمة PDF"]]],["workflow-templates","سير العمل",[["workflow","FLOW","إنشاء سير عمل"]]]];
-const activatedTools = new Set(["watermarkPdf", "numberPdf", "pdfMarkdown", "pdfPowerpoint", "pdfWord", "comparePdf", "cropPdf", "signPdf", "formsPdf", "scanPdf", "pdfExcel"]);
+const templateGroups = [["convert-templates","تحويل PDF",[["pdfWord","DOC","PDF ← Word"],["pdfPowerpoint","PPT","PDF ← PowerPoint"],["pdfExcel","XLS","PDF ← Excel"],["wordPdf","DOC","Word ← PDF"],["powerpointPdf","PPT","PowerPoint ← PDF"],["excelPdf","XLS","Excel ← PDF"],["htmlPdf","HTML","HTML ← PDF"],["pdfMarkdown","MD","PDF ← Markdown"]]],["edit-templates","تعديل PDF",[["editPdf","EDIT","إضافة نص إلى PDF"],["signPdf","SIGN","توقيع PDF"],["watermarkPdf","WM","علامة مائية"],["numberPdf","123","ترقيم الصفحات"],["cropPdf","CROP","قص صفحات PDF"],["formsPdf","FORM","نماذج PDF"]]],["security-templates","حماية PDF",[["unlockPdf","LOCK","إزالة كلمة مرور PDF"],["protectPdf","LOCK","حماية PDF بكلمة مرور"],["redactPdf","HIDE","حجب البيانات الحساسة"]]],["optimize-templates","تحسين PDF",[["pdfArchive","PDF/A","PDF ← PDF/A"],["scanPdf","SCAN","مسح ← PDF"],["searchablePdf","OCR","PDF قابل للبحث"]]],["intelligence-templates","أدوات ذكية",[["comparePdf","DIFF","مقارنة PDF"],["summarizePdf","TXT","تلخيص نصي محلي"],["translatePdf","LANG","ترجمة PDF"]]],["workflow-templates","سير العمل",[["workflow","FLOW","حزمة مخرجات"]]]];
+const activatedTools = new Set(["watermarkPdf", "numberPdf", "pdfMarkdown", "pdfPowerpoint", "pdfWord", "comparePdf", "cropPdf", "signPdf", "formsPdf", "scanPdf", "pdfExcel", "redactPdf", "workflow", "editPdf", "summarizePdf", "csvExcel", "excelCsv", "wordText", "powerpointText", "imagePng", "imageJpg", "imageWebp", "compressImage", "resizeImage", "imageText", "imageWord", "wordHtml", "excelHtml", "wordMarkdown", "cleanExcel", "excelWord", "powerpointWord", "powerpointExcel", "wordExcel", "mergeExcel", "wordImages", "powerpointImages", "excelImages", "mergeWord", "splitPowerpoint", "wordPowerpoint", "excelPowerpoint", "splitWord", "mergePowerpoint", "textPdf", "htmlWord"]);
 const templateIds = new Set(templateGroups.flatMap(group => group[2].filter(tool => !activatedTools.has(tool[0])).map(tool => tool[0])));
-templateGroups.forEach(([id,title,items]) => categories.push({id,title,tools:items.map(item => [...item, activatedTools.has(item[0]) ? ({pdfExcel:"استخراج نص PDF إلى صفوف Excel؛ لا يستعيد بنية الجداول الأصلية.",scanPdf:"اجمع صور المستندات الممسوحة في PDF؛ دون فتح الكاميرا.",signPdf:"أضف صورة توقيع إلى الصفحات المحددة. ليس توقيعًا رقميًا معتمدًا.",formsPdf:"تعبئة حقول النص والاختيار الموجودة في PDF. لا ينشئ حقولًا جديدة.",pdfWord:"استخراج النص إلى Word قابل للتحرير؛ لا يستعيد تخطيط الملف. للصور استخدم OCR.",comparePdf:"مقارنة نصوص ملفين وإخراج تقرير بالفروق؛ لا يقارن الرسومات.",cropPdf:"إخفاء هوامش الصفحات بنسبة تحددها؛ لا يحذف المحتوى المخفي نهائيًا.",watermarkPdf:"أضف علامة مائية على صفحات الملف.",numberPdf:"أضف أرقامًا للصفحات.",pdfPowerpoint:"كل صفحة شريحة كصورة، مع الحفاظ على شكل الملف.",pdfMarkdown:"استخرج النص المضمّن في ملف Markdown، دون استعادة تنسيق المستند."})[item[0]] : "قيد التطوير"])}));
+templateGroups.forEach(([id,title,items]) => categories.push({id,title,tools:items.map(item => [...item, activatedTools.has(item[0]) ? ({editPdf:"إضافة نص مرئي إلى الصفحات المحددة؛ لا يستبدل النص الأصلي.",summarizePdf:"تلخيص استخراجي محلي ينتقي جملًا من النص المضمّن، دون خدمة ذكاء اصطناعي.",redactPdf:"حجب منطقة محددة على الصفحات المختارة؛ تُصدّر كل الصفحات كصور دون طبقة النص الأصلية.",workflow:"جهّز PDF ونصًا وصورًا في حزمة ZIP واحدة. المخرجات مستقلة وليست تحويلات متتابعة.",pdfExcel:"استخراج نص PDF إلى صفوف Excel؛ لا يستعيد بنية الجداول الأصلية.",scanPdf:"اجمع صور المستندات الممسوحة في PDF؛ دون فتح الكاميرا.",signPdf:"أضف صورة توقيع إلى الصفحات المحددة. ليس توقيعًا رقميًا معتمدًا.",formsPdf:"تعبئة حقول النص والاختيار الموجودة في PDF. لا ينشئ حقولًا جديدة.",pdfWord:"استخراج النص إلى Word قابل للتحرير؛ لا يستعيد تخطيط الملف. للصور استخدم OCR.",comparePdf:"مقارنة نصوص ملفين وإخراج تقرير بالفروق؛ لا يقارن الرسومات.",cropPdf:"إخفاء هوامش الصفحات بنسبة تحددها؛ لا يحذف المحتوى المخفي نهائيًا.",watermarkPdf:"أضف علامة مائية على صفحات الملف.",numberPdf:"أضف أرقامًا للصفحات.",pdfPowerpoint:"كل صفحة شريحة كصورة، مع الحفاظ على شكل الملف.",pdfMarkdown:"استخرج النص المضمّن في ملف Markdown، دون استعادة تنسيق المستند."})[item[0]] : "قيد التطوير"])}));
 categories.push({id:"extra-tools",title:"أدوات إضافية",tools:[["pdfHtml","HTML","PDF ← HTML","تصدير النص المضمّن إلى صفحة HTML مستقلة."],["firstPage","PDF","استخراج أول صفحة","نزّل الصفحة الأولى وحدها."],["lastPage","PDF","استخراج آخر صفحة","نزّل الصفحة الأخيرة وحدها."],["barcode","QR","إنشاء QR","رمز مربع لرابط أو موقع أو نص أو ملف للنشر."],["reportPdf","INFO","تقرير الملف","تقرير نصي بعدد الصفحات وأبعادها وحالة الترتيب."]]});
 categories.forEach(category=>category.tools.filter(Array.isArray).forEach(tool=>{tool[2]=tool[2].replaceAll(" إلى "," ← ");}));
-const toolPriority = ["merge","splitRanges","compress","pdfWord","imagesPdf","images","pdfPowerpoint","extract","delete","rotate","imagesPng","text","ocr","signPdf","numberPdf","watermarkPdf","formsPdf","cropPdf","comparePdf","splitEach","splitHalf","oddPdf","evenPdf","reversePdf","imagesWebp","pdfMarkdown","repair"];
+const toolPriority = ["barcode","merge","splitRanges","compress","pdfWord","imagesPdf","images","pdfPowerpoint","pdfExcel","pdfHtml","extract","delete","rotate","imagesPng","text","ocr","signPdf","numberPdf","watermarkPdf","formsPdf","cropPdf","comparePdf","redactPdf","workflow","splitEach","splitHalf","oddPdf","evenPdf","reversePdf","imagesWebp","pdfMarkdown","repair"];
+
+const extraCatalog = [["wordPowerpoint","DOC","Word → PowerPoint","word"],["wordExcel","DOC","Word → Excel","word"],["wordImages","IMG","استخراج صور Word","word"],["wordPng","DOC","Word → PNG","word"],["wordHtml","DOC","Word → HTML","word"],["wordText","DOC","Word → TXT","word"],["wordMarkdown","DOC","Word → Markdown","word"],["mergeWord","DOC","جمع نصوص Word","word"],["splitWord","DOC","تقسيم مستند Word","word"],["powerpointWord","PPT","PowerPoint → Word","powerpoint"],["powerpointExcel","PPT","PowerPoint → Excel","powerpoint"],["powerpointImages","IMG","استخراج صور PowerPoint","powerpoint"],["powerpointPng","PPT","PowerPoint → PNG","powerpoint"],["powerpointText","PPT","PowerPoint → TXT","powerpoint"],["mergePowerpoint","PPT","دمج عروض PowerPoint","powerpoint"],["splitPowerpoint","PPT","تقسيم شرائح PowerPoint","powerpoint"],["excelWord","XLS","Excel → Word","excel"],["excelPowerpoint","XLS","Excel → PowerPoint","excel"],["excelCsv","XLS","Excel → CSV","excel"],["csvExcel","CSV","CSV → Excel","excel"],["excelImages","IMG","استخراج صور Excel","excel"],["excelHtml","XLS","Excel → HTML","excel"],["mergeExcel","XLS","دمج ملفات Excel","excel"],["cleanExcel","XLS","تنظيف بيانات Excel","excel"],["imageWord","IMG","Image → Word","images"],["imageText","IMG","Image → TXT (OCR)","images"],["imagePng","IMG","JPG → PNG","images"],["imageJpg","IMG","PNG → JPG","images"],["imageWebp","IMG","Image → WebP","images"],["compressImage","IMG","ضغط الصور","images"],["resizeImage","IMG","تغيير أبعاد الصور","images"],["htmlWord","HTML","HTML → Word","text"],["textPdf","TXT","TXT → PDF","text"],["markdownPdf","MD","Markdown → PDF","text"]];
+const conversionLabels = {"pdfWord":["PDF","Word"],"pdfPowerpoint":["PDF","PowerPoint"],"pdfExcel":["PDF","Excel"],"pdfHtml":["PDF","HTML"],"pdfMarkdown":["PDF","Markdown"],"images":["PDF","JPG"],"imagesPng":["PDF","PNG"],"imagesWebp":["PDF","WebP"],"imagesPdf":["Image","PDF"],"wordPdf":["Word","PDF"],"powerpointPdf":["PowerPoint","PDF"],"excelPdf":["Excel","PDF"],"htmlPdf":["HTML","PDF"],"pdfArchive":["PDF","PDF/A"],"ocr":["PDF (OCR)","Word"],"text":["PDF","TXT"],"scanPdf":["Scanned images","PDF"]};
+const sourceGroups = [['pdf','أدوات PDF'],['word','أدوات Word'],['powerpoint','أدوات PowerPoint'],['excel','أدوات Excel'],['images','أدوات الصور'],['text','النصوص والويب'],['utility','أدوات إضافية']];
+const catalog = categories.flatMap(category=>category.tools.filter(Array.isArray));
+extraCatalog.forEach(([id,icon,title])=>{if(!catalog.some(tool=>tool[0]===id)){catalog.push([id,icon,title,activatedTools.has(id) ? ({splitPowerpoint:"كل شريحة PPTX في عرض مستقل داخل ZIP؛ تُحذف الملاحظات والتعليقات والروابط إلى شرائح أخرى.",wordImages:"استخراج الصور المضمّنة في DOCX إلى ZIP؛ لا يحوّل الصفحات إلى صور.",powerpointImages:"استخراج الصور المضمّنة في PPTX إلى ZIP؛ لا يرسم الشرائح أو الأشكال.",excelImages:"استخراج الصور المضمّنة في XLSX إلى ZIP؛ لا يحوّل الجداول إلى صور.",mergeWord:"جمع النصوص الأساسية لعدة ملفات DOCX في مستند واحد دون الصور والتنسيق الأصلي.",mergeExcel:"جمع قيم عدة ملفات XLSX في ورقة واحدة مع أعمدة توضح الملف والورقة المصدر؛ دون الصيغ والتنسيق.",powerpointWord:"تصدير نص الشرائح إلى DOCX دون استعادة تصميمها أو صورها.",powerpointExcel:"تصدير نص الشرائح إلى صفوف Excel: مصدر ورقم سطر ونص، دون استعادة الجداول.",wordExcel:"تصدير نص المستند إلى صفوف Excel، دون استعادة تخطيط الجداول.",wordMarkdown:"تصدير النص الأساسي من DOCX إلى Markdown دون استعادة العناوين والتنسيق الأصلي.",cleanExcel:"تنظيف القيم وإخراج XLSX مستقل لكل ورقة داخل ZIP؛ لا يحفظ التنسيق أو الصيغ.",excelWord:"تصدير قيم أوراق Excel إلى مستند Word نصي؛ لا يستعيد تصميم الجداول.",imageText:"التعرف على النص في صورة باستخدام OCR؛ النتيجة تحتاج مراجعة.",imageWord:"استخراج نص الصورة إلى DOCX باستخدام OCR، دون استعادة تنسيق الصورة.",wordHtml:"تصدير النص الأساسي من DOCX إلى HTML، دون الصور أو تنسيق Word الأصلي.",excelHtml:"تصدير قيم أوراق XLSX إلى جداول HTML، دون إعادة حساب الصيغ أو نقل التنسيق.",imagePng:"تحويل JPG إلى PNG دون استعادة تفاصيل فقدت سابقًا.",imageJpg:"تحويل PNG إلى JPG بخلفية بيضاء للمناطق الشفافة.",imageWebp:"تحويل صورة JPG أو PNG أو WebP إلى WebP.",compressImage:"إعادة ترميز الصورة إلى JPG بالجودة المختارة؛ قد لا يصغر كل ملف.",resizeImage:"تغيير أبعاد الصورة وتنزيل PNG، مع خيار الحفاظ على النسبة.",csvExcel:"تحويل CSV إلى XLSX؛ اختر فاصل البيانات.",excelCsv:"تصدير كل ورقة من XLSX إلى CSV داخل ZIP. الصيغ تعتمد قيمها المحفوظة.",wordText:"استخراج نص المستند DOCX، دون الصور أو التعليقات.",powerpointText:"استخراج نص الشرائح من PPTX حسب ترتيبها، دون الملاحظات."})[id] : 'قيد التطوير']);if(!activatedTools.has(id))templateIds.add(id);}});
+const extraGroup = new Map(extraCatalog.map(item=>[item[0],item[3]]));
+function sourceGroup(id) {
+  if(extraGroup.has(id))return extraGroup.get(id);
+  if(id==='wordPdf')return 'word';if(id==='powerpointPdf')return 'powerpoint';if(id==='excelPdf')return 'excel';
+  if(['imagesPdf','scanPdf'].includes(id))return 'images';
+  if(['htmlPdf'].includes(id))return 'text';
+  if(['barcode','reportPdf','workflow'].includes(id))return 'utility';
+  return 'pdf';
+}
+catalog.forEach(tool=>{const pair=conversionLabels[tool[0]];if(pair)tool[2]=pair.join(' → ');tool[2]=tool[2].replace(/[\u2066-\u2069]/g,'');});
+categories.splice(0,categories.length,...sourceGroups.map(([id,title])=>({id:'source-'+id,title,tools:catalog.filter(tool=>sourceGroup(tool[0])===id)})));
+
 const tools = categories.flatMap((category) =>
   category.tools.filter((tool) => Array.isArray(tool)),
 );
@@ -4895,13 +5421,12 @@ class AppUI {
 
   renderTools() {
     this.activeCategory = "all";
-    const tabs = document.querySelector(".filter-tabs");
-    [["conversion", "التحويل"], ["quick-tools", "إنجاز سريع"], ["extra-tools", "أدوات إضافية"], ...templateGroups.map(group => [group[0], group[1]])].forEach(([id, title]) => {
-      const button = document.createElement("button"); button.className = "filter-tab"; button.dataset.category = id; button.textContent = title; button.setAttribute("aria-pressed", "false"); tabs.append(button);
+    const tabs = document.querySelector(".filter-tabs");tabs.replaceChildren();
+    [['all','كل الأدوات'],...categories.map(category=>[category.id,category.title])].forEach(([id,title])=>{
+      const button=document.createElement('button');button.className='filter-tab'+(id==='all'?' active':'');button.dataset.category=id;button.textContent=title;button.setAttribute('aria-pressed',String(id==='all'));tabs.append(button);
     });
-    const tabOrder = ["all","pdf-tools","conversion","image-tools","text-tools","edit-templates","quick-tools","convert-templates","optimize-templates","security-templates","intelligence-templates","workflow-templates","extra-tools"];
-    [...tabs.children].sort((a,b) => tabOrder.indexOf(a.dataset.category)-tabOrder.indexOf(b.dataset.category)).forEach(button=>tabs.append(button));
     $("#tools").innerHTML = categories.flatMap(category => category.tools.filter(Array.isArray).map(tool => ({tool,category}))).sort((a,b) => {
+      const group = categories.indexOf(a.category)-categories.indexOf(b.category);if(group)return group;
       const pending = Number(templateIds.has(a.tool[0]))-Number(templateIds.has(b.tool[0]));
       if(pending) return pending;
       const ai=toolPriority.indexOf(a.tool[0]),bi=toolPriority.indexOf(b.tool[0]);
@@ -4909,7 +5434,7 @@ class AppUI {
     }).map(({tool,category}) => `
         <button class="tool ${tool[0] === 'merge' ? 'featured' : ''}" ${templateIds.has(tool[0]) ? 'disabled aria-disabled="true" title="قالب فقط — لم تُبرمج هذه الأداة بعد"' : ""} data-tool="${tool[0]}" data-group="${category.id}" type="button">
           <span class="tool-top"><span class="tool-icon">${toolIcon(tool[0])}</span><span class="tool-format">${tool[0] === 'merge' ? 'ابدأ من هنا' : tool[1]}</span></span>
-          <span class="tool-copy"><strong>${tool[2]}</strong><small>${tool[3]}</small></span>
+          <span class="tool-copy"><strong ${tool[2].includes(" → ") ? 'dir="ltr" style="unicode-bidi:isolate;text-align:right"' : ""}>${tool[2]}</strong><small>${tool[3]}</small></span>
           <span class="tool-bottom"><span>${category.title}</span><span class="tool-arrow" aria-hidden="true">↖</span></span>
         </button>`).join("");
     $("#toolTotal").textContent = this.number(tools.length) + " أداة وقالب";
@@ -4960,6 +5485,8 @@ class AppUI {
     if (!tool) return;
 
     $("#toolTitle").textContent = tool[2];
+    $("#toolTitle").dir=tool[2].includes(" → ") ? "ltr" : "rtl";
+    $("#toolTitle").style.textAlign="right";
     $("#toolDesc").textContent = tool[3];
     $("#operation").value = id === "rotate" ? "merge" : id === "barcode" ? "qrLink" : id;
     $("#outputName").value = this.safeName(tool[2]);
@@ -4971,7 +5498,7 @@ class AppUI {
   }
 
   goHome() {
-    if (this.busy) return;
+    if (this.busy || this.loadingFiles) return;
     this.reset();
     $("#work").hidden = true;
     $("#home").hidden = false;
@@ -5012,7 +5539,22 @@ class AppUI {
     this.clearError();
 
     try {
-      if ($("#operation").value === "imagesPdf" || $("#operation").value === "scanPdf") {
+      const op=$("#operation").value;
+      const types={csvExcel:'.csv',excelCsv:'.xlsx',wordText:'.docx',powerpointText:'.pptx',imagePng:'.jpg,.jpeg',imageJpg:'.png',imageWebp:'.jpg,.jpeg,.png,.webp',compressImage:'.jpg,.jpeg,.png,.webp',resizeImage:'.jpg,.jpeg,.png,.webp',imageText:'.jpg,.jpeg,.png,.webp',imageWord:'.jpg,.jpeg,.png,.webp',wordHtml:'.docx',excelHtml:'.xlsx',wordMarkdown:'.docx',cleanExcel:'.xlsx',excelWord:'.xlsx',powerpointWord:'.pptx',powerpointExcel:'.pptx',wordExcel:'.docx',mergeExcel:'.xlsx',wordImages:'.docx',powerpointImages:'.pptx',excelImages:'.xlsx',mergeWord:'.docx',splitPowerpoint:'.pptx',wordPowerpoint:'.docx',excelPowerpoint:'.xlsx',splitWord:'.docx',mergePowerpoint:'.pptx',textPdf:'.txt',htmlWord:'.html,.htm'};
+      if(types[op]) {
+        const incoming=Array.from(fileList),multiple=['mergeExcel','mergeWord','mergePowerpoint'].includes(op);
+        if(!multiple&&(incoming.length!==1||this.files.files.length))throw new Error("أضف ملفًا واحدًا فقط. أزل الملف الحالي لاستبداله.");
+        if(multiple&&(incoming.length+this.files.files.length>10))throw new Error("حد الجمع 10 ملفات.");
+        let size=this.files.totalSize;
+        const staged=incoming.map(rawFile=>{
+          if(!types[op].split(",").some(ext=>rawFile.name.toLowerCase().endsWith(ext)))throw new Error("نوع الملف المطلوب: "+types[op]);
+          if(rawFile.size>25*1024*1024)throw new Error("الملف أكبر من 25 MB.");size+=rawFile.size;
+          return {id:globalThis.crypto?.randomUUID?.()||Date.now()+"-"+Math.random(),name:rawFile.name,size:rawFile.size,kind:'office',rawFile};
+        });
+        if(size>50*1024*1024)throw new Error("إجمالي ملفات هذه الأداة يتجاوز 50 MB.");
+        this.files.files.push(...staged);
+        $("#outputName").value=multiple?"بيانات-مجمعة":incoming[0].name.replace(/\.[^.]+$/,'');
+      } else if ($("#operation").value === "imagesPdf" || $("#operation").value === "scanPdf") {
         this.files.addImages(fileList);
         $("#outputName").value = "صور-إلى-PDF";
       } else {
@@ -5068,6 +5610,7 @@ class AppUI {
   }
 
   onFileClick(event) {
+    if (this.busy || this.loadingFiles) return;
     const remove = event.target.closest("[data-remove-file]");
     const up = event.target.closest("[data-up-file]");
     const down = event.target.closest("[data-down-file]");
@@ -5095,6 +5638,7 @@ class AppUI {
   }
 
   async onPageClick(event) {
+    if (this.busy || this.loadingFiles) return;
     const previewButton = event.target.closest("[data-preview]");
 
     if (previewButton) {
@@ -5130,6 +5674,7 @@ class AppUI {
   }
 
   onPageChange(event) {
+    if (this.busy || this.loadingFiles) return;
     const checkbox = event.target.closest("[data-check-page]");
     if (!checkbox) return;
 
@@ -5138,6 +5683,7 @@ class AppUI {
   }
 
   pageAction(action) {
+    if (this.busy || this.loadingFiles) return;
     try {
       action();
       this.clearError();
@@ -5256,7 +5802,7 @@ class AppUI {
       .map(
         (file) => `
           <div class="file-row">
-            <span class="file-icon">${file.kind === "image" ? "IMG" : "PDF"}</span>
+            <span class="file-icon">${file.kind === "image" ? "IMG" : file.kind === "office" ? file.name.split(".").pop().toUpperCase() : "PDF"}</span>
             <span class="file-info">
               <span class="file-name" title="${this.escapeHtml(file.name)}">
                 ${this.escapeHtml(file.name)}
@@ -5373,8 +5919,16 @@ class AppUI {
     const operation = $("#operation").value;
 
     $("#rangesPanel").hidden = operation !== "splitRanges";
-    $("#ocrField").hidden = operation !== "ocr";
+    $("#ocrField").hidden = !["ocr","imageText","imageWord"].includes(operation);
     $("#imageSizeField").hidden = !["imagesPdf", "scanPdf"].includes(operation);
+    const officeTypes={csvExcel:".csv",excelCsv:".xlsx",wordText:".docx",powerpointText:".pptx",imagePng:".jpg,.jpeg",imageJpg:".png",imageWebp:".jpg,.jpeg,.png,.webp",compressImage:".jpg,.jpeg,.png,.webp",resizeImage:".jpg,.jpeg,.png,.webp",imageText:".jpg,.jpeg,.png,.webp",imageWord:".jpg,.jpeg,.png,.webp",wordHtml:".docx",excelHtml:".xlsx",wordMarkdown:".docx",cleanExcel:".xlsx",excelWord:".xlsx",powerpointWord:".pptx",powerpointExcel:".pptx",wordExcel:".docx",mergeExcel:".xlsx",wordImages:".docx",powerpointImages:".pptx",excelImages:".xlsx",mergeWord:".docx",splitPowerpoint:".pptx",wordPowerpoint:".docx",excelPowerpoint:".xlsx",splitWord:".docx",mergePowerpoint:".pptx",textPdf:".txt",htmlWord:".html,.htm"};
+    const officeMode=Boolean(officeTypes[operation]);
+    $("#imageConvertOptions").hidden=!["imagePng","imageJpg","imageWebp","compressImage","resizeImage"].includes(operation);
+    $("#imageResizeFields").hidden=operation!=="resizeImage";
+    $("#imageQualityFields").hidden=!["imageJpg","imageWebp","compressImage"].includes(operation);
+    $("#splitWordOptions").hidden=operation!=="splitWord";
+    $("#cleanExcelOptions").hidden=operation!=="cleanExcel";
+    $("#csvOptions").hidden=operation!=="csvExcel";
     const barcodeMode=["barcode","qrLink","qrFile","qrText"].includes(operation);
     $("#qrOptions").hidden = !["qrLink","qrFile","qrText"].includes(operation);
     if(["qrLink","qrFile","qrText"].includes(operation)) $("#qrMode").value=operation;
@@ -5386,6 +5940,10 @@ class AppUI {
     $("#signatureOptions").hidden = operation !== "signPdf";
     $("#formsOptions").hidden = operation !== "formsPdf";
     $("#cropOptions").hidden = operation !== "cropPdf";
+    $("#editTextOptions").hidden = operation !== "editPdf";
+    $("#summaryOptions").hidden = operation !== "summarizePdf";
+    $("#redactOptions").hidden = operation !== "redactPdf";
+    $("#workflowOptions").hidden = operation !== "workflow";
     $("#qualityField").hidden = !["compress", "images", "imagesPng", "imagesWebp"].includes(operation);
 
     const labels = {
@@ -5396,6 +5954,19 @@ class AppUI {
       splitRanges: "تقسيم النطاقات إلى ZIP",
       splitEach: "تقسيم كل صفحة إلى ZIP",
       compress: "ضغط PDF",
+      editPdf: "إضافة النص وتنزيل PDF", summarizePdf: "تنزيل الملخص TXT",
+      redactPdf: "حجب المحتوى وتنزيل PDF", workflow: "تنزيل حزمة المخرجات",
+      textPdf:"تنزيل PDF مصوّر للنص",htmlWord:"تنزيل نص HTML في Word",
+      mergePowerpoint:"دمج وتنزيل PowerPoint",
+      wordPowerpoint:"إنشاء وتنزيل PowerPoint",excelPowerpoint:"إنشاء شرائح من قيم Excel",splitWord:"تنزيل أجزاء Word في ZIP",
+      splitPowerpoint:"تنزيل الشرائح كعروض مستقلة",
+      wordImages:"تنزيل صور Word في ZIP",powerpointImages:"تنزيل صور العرض في ZIP",excelImages:"تنزيل صور المصنف في ZIP",mergeWord:"تنزيل نصوص Word المجمعة",
+      mergeExcel:"جمع البيانات وتنزيل Excel",
+      powerpointWord:"تنزيل نص الشرائح في Word",powerpointExcel:"تنزيل نص الشرائح في Excel",wordExcel:"تنزيل نص Word في Excel",
+      cleanExcel:"تنظيف وتنزيل أوراق Excel",wordMarkdown:"تنزيل Markdown",excelWord:"تنزيل Word",
+      imageText:"استخراج وتنزيل النص",imageWord:"استخراج وتنزيل Word",wordHtml:"تنزيل HTML",excelHtml:"تنزيل جداول HTML",
+      imagePng:"تنزيل PNG",imageJpg:"تنزيل JPG",imageWebp:"تنزيل WebP",compressImage:"ضغط وتنزيل JPG",resizeImage:"تنزيل الصورة بالمقاس الجديد",
+      csvExcel:"تنزيل Excel",excelCsv:"تنزيل أوراق CSV في ZIP",wordText:"تنزيل نص Word",powerpointText:"تنزيل نص الشرائح",
       qrText: "تنزيل QR للنص",
       qrLink: "تنزيل QR للرابط", qrFile: "تنزيل حزمة الملف وQR", firstPage: "تنزيل أول صفحة", lastPage: "تنزيل آخر صفحة",
       barcode: "تنزيل الباركود SVG", reportPdf: "تنزيل تقرير الملف", scanPdf: "تجميع الصور وتنزيل PDF",
@@ -5433,7 +6004,8 @@ class AppUI {
       ? "يمكن إضافة عدة صور."
       : "أضف ملفات PDF ثم رتّب الصفحات.";
 
-    const wrongFiles = this.files.files.some(
+    if(officeMode){$("#fileInput").accept=officeTypes[operation];$("#fileInput").multiple=["mergeExcel","mergeWord","mergePowerpoint"].includes(operation);$("#pickLabel").textContent="اختيار ملف "+officeTypes[operation];$("#dropTitle").textContent="أضف ملف "+officeTypes[operation];$("#dropHint").textContent=operation==="mergeExcel"?"حتى 10 ملفات من الصيغة المطلوبة، بإجمالي 50 MB.":"ملف واحد حتى 25 MB، تتم معالجته داخل المتصفح.";}else{$("#fileInput").multiple=true;}
+    const wrongFiles = !officeMode && this.files.files.some(
       (file) => (file.kind === "image") !== imageMode,
     );
 
@@ -5443,7 +6015,6 @@ class AppUI {
       );
       $("#runBtn").disabled = true;
     } else {
-      this.clearError();
       $("#runBtn").disabled = (!barcodeMode && !this.files.files.length) || this.busy || this.loadingFiles;
     }
   }
@@ -5626,8 +6197,7 @@ class AppUI {
   }
 }
 
-return AppUI;
-})();
+return AppUI;})();
 
 if (globalThis.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -5793,7 +6363,7 @@ window.masahaApp = app;
               <div class="field">
                 <label for="operation">العملية</label>
                 <select class="control" id="operation">
-                  <option value="reversePdf">عكس الترتيب</option><option value="oddPdf">الصفحات الفردية</option><option value="evenPdf">الصفحات الزوجية</option><option value="splitHalf">تقسيم إلى نصفين</option><option value="watermarkPdf">علامة مائية</option><option value="numberPdf">ترقيم الصفحات</option><option value="pdfMarkdown">PDF ← Markdown</option><option value="pdfPowerpoint">PDF ← PowerPoint</option><option value="pdfWord">PDF ← Word</option><option value="comparePdf">مقارنة نصوص ملفين</option><option value="cropPdf">قص الهوامش</option><option value="signPdf">إضافة توقيع</option><option value="formsPdf">تعبئة نموذج</option><option value="qrText">QR للنص</option><option value="qrLink">QR للرابط</option><option value="qrFile">QR للملف</option><option value="firstPage">أول صفحة</option><option value="lastPage">آخر صفحة</option><option value="barcode">باركود</option><option value="reportPdf">تقرير الملف</option><option value="scanPdf">صور المسح ← PDF</option><option value="pdfExcel">PDF ← Excel</option><option value="pdfHtml">PDF ← HTML</option><option value="merge">دمج / ترتيب PDF</option>
+                  <option value="reversePdf">عكس الترتيب</option><option value="oddPdf">الصفحات الفردية</option><option value="evenPdf">الصفحات الزوجية</option><option value="splitHalf">تقسيم إلى نصفين</option><option value="watermarkPdf">علامة مائية</option><option value="numberPdf">ترقيم الصفحات</option><option value="pdfMarkdown">PDF ← Markdown</option><option value="pdfPowerpoint">PDF ← PowerPoint</option><option value="pdfWord">PDF ← Word</option><option value="comparePdf">مقارنة نصوص ملفين</option><option value="cropPdf">قص الهوامش</option><option value="signPdf">إضافة توقيع</option><option value="formsPdf">تعبئة نموذج</option><option value="qrText">QR للنص</option><option value="qrLink">QR للرابط</option><option value="qrFile">QR للملف</option><option value="firstPage">أول صفحة</option><option value="lastPage">آخر صفحة</option><option value="barcode">باركود</option><option value="reportPdf">تقرير الملف</option><option value="scanPdf">صور المسح ← PDF</option><option value="pdfExcel">PDF ← Excel</option><option value="pdfHtml">PDF ← HTML</option><option value="redactPdf">حجب المحتوى</option><option value="workflow">حزمة مخرجات</option><option value="editPdf">إضافة نص</option><option value="summarizePdf">تلخيص نصي محلي</option><option value="csvExcel">CSV إلى Excel</option><option value="excelCsv">Excel إلى CSV</option><option value="wordText">Word إلى TXT</option><option value="powerpointText">PowerPoint إلى TXT</option><option value="imagePng">JPG إلى PNG</option><option value="imageJpg">PNG إلى JPG</option><option value="imageWebp">صورة إلى WebP</option><option value="compressImage">ضغط الصور</option><option value="resizeImage">تغيير أبعاد الصور</option><option value="imageText">نص الصورة</option><option value="imageWord">الصورة إلى Word</option><option value="wordHtml">Word إلى HTML</option><option value="excelHtml">Excel إلى HTML</option><option value="cleanExcel">تنظيف Excel</option><option value="wordMarkdown">Word إلى Markdown</option><option value="excelWord">Excel إلى Word</option><option value="powerpointWord">PowerPoint → Word</option><option value="powerpointExcel">PowerPoint → Excel</option><option value="wordExcel">Word → Excel</option><option value="mergeExcel">جمع بيانات Excel</option><option value="wordImages">صور Word</option><option value="powerpointImages">صور PowerPoint</option><option value="excelImages">صور Excel</option><option value="mergeWord">جمع نصوص Word</option><option value="splitPowerpoint">تقسيم PowerPoint</option><option value="wordPowerpoint">Word → PowerPoint</option><option value="excelPowerpoint">Excel → PowerPoint</option><option value="splitWord">تقسيم نص Word</option><option value="mergePowerpoint">دمج PowerPoint</option><option value="textPdf">TXT → PDF</option><option value="htmlWord">HTML → Word</option><option value="merge">دمج / ترتيب PDF</option>
                   <option value="extract">استخراج الصفحات المحددة</option>
                   <option value="delete">حذف الصفحات المحددة</option>
                   <option value="splitRanges">تقسيم حسب نطاقات الصفحات</option>
@@ -5846,7 +6416,7 @@ window.masahaApp = app;
                 <div class="range-list" id="rangeList"></div>
               </div>
 
-              <div id="qrOptions" hidden><div class="field"><label for="qrMode">محتوى رمز QR</label><select class="control" id="qrMode"><option value="qrLink">رابط أو موقع</option><option value="qrText">نص</option><option value="qrFile">ملف مرفق</option></select></div><div id="qrTextInputs" class="field" hidden><label for="qrText">النص داخل الرمز</label><textarea class="control" id="qrText" rows="5" maxlength="1200" placeholder="اكتب النص هنا، يدعم العربية"></textarea><p class="muted">حتى 1200 بايت بترميز UTF-8؛ النص العربي يستهلك أكثر من بايت للحرف.</p></div><div id="qrLinkInputs" class="field"><label for="qrUrl">رابط الموقع أو الملف المنشور</label><input class="control" id="qrUrl" type="url" dir="ltr" placeholder="https://example.com/file.pdf" /></div><div id="qrFileInputs"><div class="field"><label for="qrAttachment">الملف المرفق</label><input class="control" id="qrAttachment" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.pptx,.xlsx,.zip" /></div><div class="field"><label for="qrSiteUrl">رابط موقعك الذي سترفع عليه الملف</label><input class="control" id="qrSiteUrl" type="url" dir="ltr" placeholder="https://username.github.io/masaha/" /></div><p class="notice">هذه حزمة نشر وليست رفعًا تلقائيًا: فك ZIP وارفع مجلد uploads بمحتوياته إلى مستودع موقعك. لا يعمل الرمز قبل النشر. الملفات المنشورة قد تكون متاحة للجميع.</p></div><p class="muted">تنشأ الرموز محليًا دون إرسال بياناتك لخدمة QR.</p></div><div id="barcodeOptions" hidden><div class="field"><label for="barcodeValue">محتوى الباركود</label><input class="control" id="barcodeValue" value="MASAHA-001" maxlength="60" dir="ltr" /></div><p class="muted">Code 39: أحرف إنجليزية وأرقام ومسافة والرموز - . $ / + %. يتحول النص إلى أحرف كبيرة. ليست هذه أداة QR.</p></div><div id="signatureOptions" hidden><div class="field"><label for="signatureFile">صورة التوقيع (PNG أو JPG)</label><input class="control" id="signatureFile" type="file" accept="image/png,image/jpeg" /></div><div class="field"><label for="signaturePosition">مكان التوقيع</label><select class="control" id="signaturePosition"><option value="right">أسفل اليمين</option><option value="center">أسفل الوسط</option><option value="left">أسفل اليسار</option></select></div><p class="muted">يضاف التوقيع إلى الصفحات المحددة فقط. يفضّل PNG بخلفية شفافة.</p></div><div id="formsOptions" hidden><p class="muted">أضف ملفًا واحدًا. النصوص الجديدة هنا تدعم الأحرف اللاتينية؛ دعم خط عربي للنماذج يحتاج إعدادًا إضافيًا.</p><div id="formFields">أضف ملف PDF لعرض حقوله.</div></div><div class="field" id="cropOptions" hidden><label for="cropPercent">قص من كل حافة (%)</label><input class="control" id="cropPercent" type="number" min="0" max="30" step="1" value="5" /><p class="muted">يغيّر مساحة العرض فقط. المحتوى خارجها قد يبقى قابلًا للاسترجاع.</p></div><div class="field" id="qualityField">
+              <div id="imageConvertOptions" hidden><div id="imageQualityFields" class="field"><label for="convertImageQuality">جودة الصورة</label><select class="control" id="convertImageQuality"><option value="0.6">حجم أصغر — 60%</option><option value="0.8" selected>متوازنة — 80%</option><option value="0.95">جودة أعلى — 95%</option></select></div><div id="imageResizeFields"><div class="field"><label for="resizeWidth">العرض بالبكسل</label><input class="control" id="resizeWidth" type="number" min="1" max="8192" value="1024" /></div><label class="check"><input id="resizeKeepRatio" type="checkbox" checked /> الحفاظ على نسبة الأبعاد</label><div class="field"><label for="resizeHeight">الارتفاع عند إلغاء الحفاظ على النسبة</label><input class="control" id="resizeHeight" type="number" min="1" max="8192" value="768" /></div></div><p class="muted">صورة واحدة في العملية. الصور المتحركة تتحول إلى إطار ثابت. بيانات الصورة الوصفية لا تُحفظ.</p></div><div id="splitWordOptions" hidden><div class="field"><label for="wordSplitParagraphs">عدد الفقرات في كل ملف</label><input class="control" id="wordSplitParagraphs" type="number" min="1" max="2000" value="20" /></div><p class="muted">تقسيم النص المستخرج؛ لا يقسّم حسب الصفحات الأصلية ولا يحفظ الصور أو التنسيق.</p></div><div id="cleanExcelOptions" hidden><label class="check"><input id="cleanTrim" type="checkbox" checked /> إزالة المسافات من أطراف القيم</label><label class="check"><input id="cleanBlank" type="checkbox" checked /> إزالة الصفوف الفارغة</label><label class="check"><input id="cleanDuplicate" type="checkbox" checked /> إزالة الصفوف المتطابقة تمامًا</label><p class="notice">احتفظ بالأصل. يصدر كل ورقة كملف XLSX مستقل داخل ZIP. تُحوّل القيم إلى نصوص ولا تُحفظ الصيغ والتنسيقات.</p></div><div id="csvOptions" hidden><div class="field"><label for="csvDelimiter">فاصل أعمدة CSV</label><select class="control" id="csvDelimiter"><option value=",">فاصلة ,</option><option value=";">فاصلة منقوطة ;</option><option value="tab">علامة جدولة</option></select></div><p class="muted">UTF-8. تحفظ القيم كنصوص للحفاظ على الأصفار ومنع تنفيذ الصيغ.</p></div><div id="editTextOptions" hidden><div class="field"><label for="editTextValue">النص المضاف</label><textarea class="control" id="editTextValue" rows="3" maxlength="400" placeholder="اكتب النص هنا"></textarea></div><div class="field"><label for="editTextPosition">مكان النص</label><select class="control" id="editTextPosition"><option value="top">أعلى الصفحة</option><option value="bottom">أسفل الصفحة</option></select></div><p class="muted">يضاف النص كصورة شفافة على الصفحات المحددة، دون تغيير النص الأصلي. الصفحات المدوّرة تحتاج تصديرًا وإعادة فتح أولًا.</p></div><div id="summaryOptions" hidden><div class="field"><label for="summarySentences">عدد الجمل في الملخص</label><input class="control" id="summarySentences" type="number" min="1" max="30" value="5" /></div><p class="muted">اختيار جمل من النص الموجود؛ راجع الملخص مع الأصل. المستندات المصوّرة تحتاج OCR أولًا.</p></div><div id="redactOptions" hidden><p class="notice">حدد المنطقة كنسبة من الصفحة الظاهرة، من أعلى اليسار. راجع النتيجة قبل مشاركتها. كل الصفحات ستصبح صورًا؛ الروابط والنماذج والنص القابل للبحث لن تنتقل.</p><div class="field"><label for="redactX">المسافة من اليسار (%)</label><input class="control" id="redactX" type="number" min="0" max="99" value="10" /></div><div class="field"><label for="redactY">المسافة من الأعلى (%)</label><input class="control" id="redactY" type="number" min="0" max="99" value="10" /></div><div class="field"><label for="redactW">عرض المنطقة (%)</label><input class="control" id="redactW" type="number" min="1" max="100" value="80" /></div><div class="field"><label for="redactH">ارتفاع المنطقة (%)</label><input class="control" id="redactH" type="number" min="1" max="100" value="15" /></div></div><div id="workflowOptions" hidden><p class="muted">اختر المخرجات المطلوبة. تُنفذ كل عملية على الصفحات الحالية وتجمع النتائج في ZIP.</p><label class="check"><input id="batchPdf" type="checkbox" checked /> ملف PDF</label><label class="check"><input id="batchText" type="checkbox" checked /> النص TXT</label><label class="check"><input id="batchImages" type="checkbox" /> صور JPG داخل ZIP</label></div><div id="qrOptions" hidden><div class="field"><label for="qrMode">محتوى رمز QR</label><select class="control" id="qrMode"><option value="qrLink">رابط أو موقع</option><option value="qrText">نص</option><option value="qrFile">ملف مرفق</option></select></div><div id="qrTextInputs" class="field" hidden><label for="qrText">النص داخل الرمز</label><textarea class="control" id="qrText" rows="5" maxlength="1200" placeholder="اكتب النص هنا، يدعم العربية"></textarea><p class="muted">حتى 1200 بايت بترميز UTF-8؛ النص العربي يستهلك أكثر من بايت للحرف.</p></div><div id="qrLinkInputs" class="field"><label for="qrUrl">رابط الموقع أو الملف المنشور</label><input class="control" id="qrUrl" type="url" dir="ltr" placeholder="https://example.com/file.pdf" /></div><div id="qrFileInputs"><div class="field"><label for="qrAttachment">الملف المرفق</label><input class="control" id="qrAttachment" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.pptx,.xlsx,.zip" /></div><div class="field"><label for="qrSiteUrl">رابط موقعك الذي سترفع عليه الملف</label><input class="control" id="qrSiteUrl" type="url" dir="ltr" placeholder="https://username.github.io/masaha/" /></div><p class="notice">هذه حزمة نشر وليست رفعًا تلقائيًا: فك ZIP وارفع مجلد uploads بمحتوياته إلى مستودع موقعك. لا يعمل الرمز قبل النشر. الملفات المنشورة قد تكون متاحة للجميع.</p></div><p class="muted">تنشأ الرموز محليًا دون إرسال بياناتك لخدمة QR.</p></div><div id="barcodeOptions" hidden><div class="field"><label for="barcodeValue">محتوى الباركود</label><input class="control" id="barcodeValue" value="MASAHA-001" maxlength="60" dir="ltr" /></div><p class="muted">Code 39: أحرف إنجليزية وأرقام ومسافة والرموز - . $ / + %. يتحول النص إلى أحرف كبيرة. ليست هذه أداة QR.</p></div><div id="signatureOptions" hidden><div class="field"><label for="signatureFile">صورة التوقيع (PNG أو JPG)</label><input class="control" id="signatureFile" type="file" accept="image/png,image/jpeg" /></div><div class="field"><label for="signaturePosition">مكان التوقيع</label><select class="control" id="signaturePosition"><option value="right">أسفل اليمين</option><option value="center">أسفل الوسط</option><option value="left">أسفل اليسار</option></select></div><p class="muted">يضاف التوقيع إلى الصفحات المحددة فقط. يفضّل PNG بخلفية شفافة.</p></div><div id="formsOptions" hidden><p class="muted">أضف ملفًا واحدًا. النصوص الجديدة هنا تدعم الأحرف اللاتينية؛ دعم خط عربي للنماذج يحتاج إعدادًا إضافيًا.</p><div id="formFields">أضف ملف PDF لعرض حقوله.</div></div><div class="field" id="cropOptions" hidden><label for="cropPercent">قص من كل حافة (%)</label><input class="control" id="cropPercent" type="number" min="0" max="30" step="1" value="5" /><p class="muted">يغيّر مساحة العرض فقط. المحتوى خارجها قد يبقى قابلًا للاسترجاع.</p></div><div class="field" id="qualityField">
                 <label for="quality">جودة العرض</label>
                 <select class="control" id="quality">
                   <option value="1.1">حجم أصغر</option>
@@ -5934,6 +6504,6 @@ window.masahaApp = app;
       </div>
     </div>
 
-    <footer><div class="wrap footer-inner"><span class="footer-brand">مساحة<span>مساحة للملفات. وراحة للبال.</span></span><p>احتفظ بنسخة من ملفاتك الأصلية.<br>بعض التحويلات الصورية تقلل قابلية البحث في النص.</p><span class="footer-mark">صُنع لتبسيط يومك ↗</span></div></footer>
+    <footer><div class="wrap footer-inner"><span class="footer-brand">مساحة<span>مساحة للملفات. وراحة للبال.</span></span><p>احتفظ بنسخة من ملفاتك الأصلية.<br>بعض التحويلات الصورية تقلل قابلية البحث في النص.</p><span class="footer-mark">صُنع لتبسيط يومك ↗ · الإصدار 1.28.0</span></div></footer>
   </body>
 </html>
