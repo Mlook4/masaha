@@ -595,6 +595,18 @@ html{scroll-behavior:smooth;scroll-padding-top:100px}body{font-family:'IBM Plex 
 .tool-format.format-xls,.format-badge.format-xls{background:#27814f;color:#fff;border-color:#181916}
 .tool-format.format-doc,.format-badge.format-doc{background:#3068b3;color:#fff;border-color:#181916}
 @media(max-width:520px){.tool-badges{gap:4px}}
+
+/* Merge file order and output page boundaries */
+.file-order-hint{margin:0 0 3px;color:var(--gray);font-size:11px;line-height:1.7}
+.file-start{display:inline-block;margin-top:5px;padding:2px 6px;border:1px solid #b0b5a2;background:var(--panel);color:var(--ink);font-size:10px;line-height:1.6}
+.file-start.first{border-color:#68761e;background:var(--accent);color:#181916;font-weight:600}
+.file-drag-handle{display:grid;place-items:center;flex:0 0 34px;width:34px;height:36px;padding:0;border:1px solid #a5ac98;background:var(--panel);cursor:grab}
+.file-drag-handle:active{cursor:grabbing}
+.file-drag-handle span{display:block;width:15px;height:15px;background-image:radial-gradient(circle,var(--ink) 1.2px,transparent 1.5px);background-size:5px 5px}
+.file-row.dragging{opacity:.5}
+.file-row.drop-before{box-shadow:inset 0 3px 0 var(--accent)}
+.file-row.drop-after{box-shadow:inset 0 -3px 0 var(--accent)}
+@media(max-width:600px){.file-actions{margin-inline-start:auto}.file-order-hint{font-size:10px}}
 </style>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -44624,6 +44636,16 @@ class FileManager {
     return true;
   }
 
+  moveTo(id, targetId, after = false) {
+    if (id === targetId) return false;
+    const from = this.files.findIndex((file) => file.id === id);
+    if (from < 0 || !this.files.some((file) => file.id === targetId)) return false;
+    const [file] = this.files.splice(from, 1);
+    const target = this.files.findIndex((item) => item.id === targetId);
+    this.files.splice(target + (after ? 1 : 0), 0, file);
+    return this.files.some((item, index) => item.id === file.id && index !== from);
+  }
+
   clear() {
     this.files = [];
   }
@@ -44865,8 +44887,7 @@ class PageManager {
     this.pages.sort(
       (a, b) =>
         (order.get(a.file?.id) ?? Number.MAX_SAFE_INTEGER) -
-          (order.get(b.file?.id) ?? Number.MAX_SAFE_INTEGER) ||
-        a.number - b.number,
+          (order.get(b.file?.id) ?? Number.MAX_SAFE_INTEGER),
     );
   }
 
@@ -46972,6 +46993,7 @@ class AppUI {
     });
 
     this.bindDropzone();
+    this.bindFileDragging();
 
     $("#fileList").addEventListener("click", (event) =>
       this.onFileClick(event),
@@ -47094,6 +47116,58 @@ class AppUI {
     drop.addEventListener("drop", (event) =>
       this.addFiles(event.dataTransfer.files),
     );
+  }
+
+  bindFileDragging() {
+    const list = $("#fileList");
+    list.addEventListener("dragstart", (event) => {
+      const handle = event.target.closest("[data-drag-file]");
+      if (!handle || this.busy || this.loadingFiles) { event.preventDefault(); return; }
+      this.draggedFileId = handle.dataset.dragFile;
+      handle.closest(".file-row")?.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", this.draggedFileId);
+    });
+    list.addEventListener("dragover", (event) => {
+      const row = event.target.closest("[data-file-id]");
+      if (!this.draggedFileId || !row || row.dataset.fileId === this.draggedFileId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      list.querySelectorAll(".drop-before,.drop-after").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+      row.classList.add(event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2 ? "drop-after" : "drop-before");
+    });
+    list.addEventListener("drop", (event) => {
+      if (!this.draggedFileId) return;
+      event.preventDefault();
+      const row = event.target.closest("[data-file-id]");
+      if (row && row.dataset.fileId !== this.draggedFileId) {
+        const after = event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+        if (this.files.moveTo(this.draggedFileId, row.dataset.fileId, after)) {
+          this.pages.reorderFiles(this.files.files);
+          this.ranges = [];
+          this.renderAll();
+        }
+      }
+      this.clearFileDragStyles();
+    });
+    list.addEventListener("dragend", () => this.clearFileDragStyles());
+    list.addEventListener("keydown", (event) => {
+      const handle = event.target.closest("[data-drag-file]");
+      if (!handle || !["ArrowUp", "ArrowDown"].includes(event.key) || this.busy || this.loadingFiles) return;
+      event.preventDefault();
+      const direction = event.key === "ArrowUp" ? -1 : 1;
+      if (this.files.move(handle.dataset.dragFile, direction)) {
+        this.pages.reorderFiles(this.files.files);
+        this.ranges = [];
+        this.renderAll();
+        list.querySelector(`[data-drag-file="${handle.dataset.dragFile}"]`)?.focus();
+      }
+    });
+  }
+
+  clearFileDragStyles() {
+    $("#fileList").querySelectorAll(".dragging,.drop-before,.drop-after").forEach((row) => row.classList.remove("dragging", "drop-before", "drop-after"));
+    this.draggedFileId = null;
   }
 
   bindPageDragging() {
@@ -47533,10 +47607,25 @@ class AppUI {
   }
 
   renderFiles() {
-    $("#fileList").innerHTML = this.files.files
+    const positions = new Map();
+    this.pages.pages.filter((page) => !page.deleted).forEach((page, index) => {
+      if (!page.file) return;
+      if (!positions.has(page.file.id)) positions.set(page.file.id, []);
+      positions.get(page.file.id).push(index + 1);
+    });
+    const multiple = this.files.files.length > 1;
+    const showMergeStarts = multiple && $("#operation").value === "merge";
+    $("#fileList").innerHTML = (multiple ? '<p class="file-order-hint">اسحب مقبض النقاط لتغيير ترتيب الملفات، أو استخدم الأسهم.</p>' : "") + this.files.files
       .map(
-        (file) => `
-          <div class="file-row">
+        (file) => {
+          const pages = positions.get(file.id) || [];
+          const consecutive = pages.every((position, index) => index === 0 || position === pages[index - 1] + 1);
+          const start = file.pdf && showMergeStarts
+            ? !pages.length ? 'لا صفحات من هذا الملف في الناتج'
+              : `${pages[0] === 1 ? 'بداية الملف المدمج' : 'يبدأ في المدمج'}: صفحة ${this.number(pages[0])}${consecutive && pages.length > 1 ? ` – ${this.number(pages.at(-1))}` : pages.length > 1 ? ' · صفحاته متفرقة' : ''}`
+            : '';
+          return `
+          <div class="file-row" data-file-id="${file.id}">
             <span class="file-icon">${file.kind === "image" ? "IMG" : file.kind === "office" ? file.name.split(".").pop().toUpperCase() : "PDF"}</span>
             <span class="file-info">
               <span class="file-name" title="${this.escapeHtml(file.name)}">
@@ -47546,13 +47635,15 @@ class AppUI {
                 ${file.pdf ? `${this.number(file.pdf.numPages)} صفحة · ` : ""}
                 ${(file.size / 1048576).toFixed(2)} MB
               </span>
+              ${start ? `<span class="file-start${pages[0] === 1 ? ' first' : ''}">${start}</span>` : ''}
             </span>
             <span class="file-actions">
               ${
-                this.files.files.length > 1
+                multiple
                   ? `
-                    <button class="btn small" data-up-file="${file.id}" type="button">↑</button>
-                    <button class="btn small" data-down-file="${file.id}" type="button">↓</button>
+                    <button class="file-drag-handle" data-drag-file="${file.id}" draggable="true" type="button" aria-label="اسحب لترتيب ${this.escapeHtml(file.name)}؛ أو استخدم سهمي لوحة المفاتيح" title="اسحب لترتيب الملف"><span aria-hidden="true"></span></button>
+                    <button class="btn small" data-up-file="${file.id}" type="button" aria-label="رفع ${this.escapeHtml(file.name)}">↑</button>
+                    <button class="btn small" data-down-file="${file.id}" type="button" aria-label="خفض ${this.escapeHtml(file.name)}">↓</button>
                   `
                   : ""
               }
@@ -47564,7 +47655,7 @@ class AppUI {
               >×</button>
             </span>
           </div>
-        `,
+        `;},
       )
       .join("");
   }
@@ -47739,7 +47830,7 @@ class AppUI {
 
     $("#dropHint").textContent = imageMode
       ? "يمكن إضافة عدة صور."
-      : "أضف ملفات PDF ثم رتّب الصفحات.";
+      : "اختر عدة ملفات PDF دفعة واحدة أو اسحبها هنا، ثم رتّبها من مقبض النقاط.";
 
     if(officeMode){$("#fileInput").accept=officeTypes[operation];$("#fileInput").multiple=["mergeExcel","mergeWord","mergePowerpoint"].includes(operation);$("#pickLabel").textContent="اختيار ملف "+officeTypes[operation];$("#dropTitle").textContent="أضف ملف "+officeTypes[operation];$("#dropHint").textContent=operation==="mergeExcel"?"حتى 10 ملفات من الصيغة المطلوبة، بإجمالي 50 MB.":"ملف واحد حتى 25 MB، تتم معالجته داخل المتصفح.";}else{$("#fileInput").multiple=true;}
     const wrongFiles = !officeMode && this.files.files.some(
@@ -48242,6 +48333,6 @@ window.masahaApp = app;
       </div>
     </div>
 
-    <footer><div class="wrap footer-inner"><span class="footer-brand">مساحة<span>مساحة للملفات. وراحة للبال.</span></span><p>احتفظ بنسخة من ملفاتك الأصلية.<br>بعض التحويلات الصورية تقلل قابلية البحث في النص.</p><span class="footer-mark">صُنع لتبسيط يومك ↗ · الإصدار 1.46.0</span></div></footer>
+    <footer><div class="wrap footer-inner"><span class="footer-brand">مساحة<span>مساحة للملفات. وراحة للبال.</span></span><p>احتفظ بنسخة من ملفاتك الأصلية.<br>بعض التحويلات الصورية تقلل قابلية البحث في النص.</p><span class="footer-mark">صُنع لتبسيط يومك ↗ · الإصدار 1.47.0</span></div></footer>
   </body>
 </html>
